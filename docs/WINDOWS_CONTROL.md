@@ -38,7 +38,7 @@ Global input has an unavoidable foreground/user-interference race between checki
 
 ## First native test: disposable application only
 
-Requirements: interactive Windows 10/11, Node 24, Windows PowerShell 5.1/.NET Framework with UI Automation, and a local policy that permits running the reviewed scripts. The scripts do not use `ExecutionPolicy Bypass`. If organizational script signing is required, sign/review them through that policy.
+Requirements: interactive Windows 10/11, Node 24, and Windows PowerShell 5.1/.NET Framework with UI Automation. The test runner invokes the fixed, trusted `native/windows/build-validation.ps1` with `powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <absolute-project-script-path> -OutputPath <temporary-fixture-executable>`. This execution policy applies only to that child PowerShell process and expires when it exits; no `Set-ExecutionPolicy` command, registry edit, administrator elevation, or CurrentUser/LocalMachine policy change is made. The production `worker.ps1` invocation retains its existing execution policy. Organization-enforced MachinePolicy/UserPolicy takes precedence; use the organization's signing/review process if either script remains blocked.
 
 From this existing checkout:
 

@@ -34,6 +34,10 @@ if (process.platform !== "win32") {
       "-NoLogo",
       "-NoProfile",
       "-NonInteractive",
+      // Applies only to this child process running the fixed validation builder.
+      // Do not change CurrentUser/LocalMachine policy or the production worker.
+      "-ExecutionPolicy",
+      "Bypass",
       "-File",
       resolve("native/windows/build-validation.ps1"),
       "-OutputPath",

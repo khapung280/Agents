@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-10-16T08:28:42.121Z",
+  "source": "Actual running AGENTS production dashboard in Chromium; no generated imagery",
+  "viewports": [
+    [
+      1920,
+      1080
+    ],
+    [
+      1440,
+      900
+    ]
+  ],
+  "agents": 10,
+  "pageErrors": [],
+  "recordedFrames": 115,
+  "recordedSeconds": 6.688547849655151,
+  "paidApiCalls": 0
+}

@@ -4,6 +4,10 @@
 
 This repository is a working foundation, not a completed general-purpose autonomous computer operator. Built-in workflows run without a model. OpenAI is the selected optional provider; live API calls need configuration. The Windows control adapter is implemented but has not been validated on Windows. Connected email sending, live voice/language validation, general sandboxed coding, and production deployment remain incomplete. See [verification and phase status](docs/VERIFICATION.md).
 
+## Windows desktop installation
+
+A per-user Windows x64 installer and desktop shortcut are now supported. See [installation and native test steps](docs/WINDOWS_INSTALL.md). The package includes its runtime; no VS Code, Node installation, or API key is needed for built-in workflows. The installer can be cross-compiled in Linux; that does **not** verify Windows execution. Real-device acceptance remains pending.
+
 ## Start locally
 
 Use Node **24 LTS**, npm, and a current desktop browser.

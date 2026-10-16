@@ -1,0 +1,40 @@
+name: Windows package
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Compile native worker without desktop actions
+        shell: powershell
+        run: powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/windows/check-build.ps1
+      - run: npm run package:windows
+      - name: Build per-user installer
+        shell: powershell
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (!(Test-Path $compiler)) { throw 'NSIS is required on this Windows runner.' }
+          & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" installer/agents.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
+          Get-FileHash artifacts/windows/Ultimate-Agents-Both-Setup.exe -Algorithm SHA256 | Format-List
+          (Get-FileHash artifacts/windows/Ultimate-Agents-Both-Setup.exe -Algorithm SHA256).Hash | Set-Content artifacts/windows/Ultimate-Agents-Both-Setup.exe.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ultimate-Agents-Both-Windows-x64
+          path: |
+            artifacts/windows/Ultimate-Agents-Both-Setup.exe
+            artifacts/windows/package-info.json
+            artifacts/windows/Ultimate-Agents-Both-Setup.exe.sha256
+          if-no-files-found: error

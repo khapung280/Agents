@@ -35,7 +35,7 @@ if (process.platform !== "win32") {
       "-NoProfile",
       "-NonInteractive",
       // Applies only to this child process running the fixed validation builder.
-      // Do not change CurrentUser/LocalMachine policy or the production worker.
+      // Do not change CurrentUser/LocalMachine policy.
       "-ExecutionPolicy",
       "Bypass",
       "-File",

@@ -38,7 +38,11 @@ Global input has an unavoidable foreground/user-interference race between checki
 
 ## First native test: disposable application only
 
-Requirements: interactive Windows 10/11, Node 24, and Windows PowerShell 5.1/.NET Framework with UI Automation. The test runner invokes the fixed, trusted `native/windows/build-validation.ps1` with `powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <absolute-project-script-path> -OutputPath <temporary-fixture-executable>`. This execution policy applies only to that child PowerShell process and expires when it exits; no `Set-ExecutionPolicy` command, registry edit, administrator elevation, or CurrentUser/LocalMachine policy change is made. The production `worker.ps1` invocation retains its existing execution policy. Organization-enforced MachinePolicy/UserPolicy takes precedence; use the organization's signing/review process if either script remains blocked.
+Requirements: interactive Windows 10/11 x64 and Windows PowerShell 5.1/.NET Framework with UI Automation. The packaged **Test Windows Control** shortcut includes the Node runtime; a source checkout requires Node 24.
+
+Both fixed project scripts now run with child-process-only execution policy: `build-validation.ps1` uses `powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <absolute-project-builder-path> -OutputPath <temporary-fixture-executable>`; `worker.ps1` uses `powershell.exe -NoLogo -NoProfile -NonInteractive -Sta -ExecutionPolicy Bypass -File <absolute-project-worker-path>`. The worker setting applies in the test harness and approved normal application tasks. Task JSON travels over stdin, never through command interpolation. No caller supplies a script path.
+
+The setting expires with each PowerShell child. No `Set-ExecutionPolicy`, security registry edit, administrator elevation, or CurrentUser/LocalMachine policy change occurs. The worker removes `PSExecutionPolicyPreference` from an application's inherited environment before launching it. Application allowlists, individual approvals, stale-observation checks, postconditions, and stop controls are unchanged. Organization-enforced MachinePolicy/UserPolicy takes precedence; use the organization's signing/review process if the fixed scripts remain blocked.
 
 From this existing checkout:
 

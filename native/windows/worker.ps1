@@ -19,6 +19,8 @@ try {
     $start = New-Object Diagnostics.ProcessStartInfo
     $start.FileName = $exe
     $start.UseShellExecute = $false
+    # The worker process override must not propagate to the launched application.
+    $start.EnvironmentVariables.Remove('PSExecutionPolicyPreference')
     $process = [Diagnostics.Process]::Start($start)
     if (-not $process) { throw 'Application did not start.' }
     $deadline = [DateTime]::UtcNow.AddSeconds(10)

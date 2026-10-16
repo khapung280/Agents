@@ -3,6 +3,8 @@ import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 const directory = await mkdtemp(join(tmpdir(), "agents-desktop-test-"));
 let app, child;
 try {
@@ -27,6 +29,20 @@ try {
   const page = await app.firstWindow({ timeout: 20000 });
   await page.waitForSelector(".core-panel", { timeout: 15000 });
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
+  await promisify(execFile)(child.spawnfile, args, {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      AGENTS_DESKTOP_DATA_DIR: directory,
+      AGENTS_DESKTOP_PORT: "4338",
+    },
+    timeout: 15000,
+  });
+  assert.equal(
+    app.windows().length,
+    1,
+    "Second launch must reuse the existing instance",
+  );
   await page
     .getByLabel("Command your agents")
     .fill("Verify the desktop workflow service");
@@ -41,8 +57,16 @@ try {
   await mkdir("artifacts", { recursive: true });
   await page.screenshot({ path: "artifacts/electron-desktop.png" });
   console.log(
-    "PASS: Electron launched, paired, rendered the core, kept Node out of the renderer, and completed a real workflow.",
+    "PASS: Electron launched, paired, rendered the core, reused its existing instance, kept Node out of the renderer, and completed a real workflow.",
   );
+  await app.close();
+  app = undefined;
+  await assert.rejects(
+    fetch("http://127.0.0.1:4338/api/health", {
+      signal: AbortSignal.timeout(2000),
+    }),
+  );
+  console.log("PASS: closing Electron stopped its local service.");
 } finally {
   if (app) {
     await Promise.race([app.close(), new Promise((r) => setTimeout(r, 5000))]);

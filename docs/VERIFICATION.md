@@ -6,7 +6,7 @@ This is a functioning local-first foundation for **ULTIMATE AGENTS — BOTH**. I
 
 | Phase                     | Delivered and checked                                                                                                                                                                 | Outstanding                                                                                                                                     |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1: Architecture/setup     | TypeScript, Vite, Node, Electron, lint/format, typed schemas, lockfile, documentation, tests                                                                                          | Production packaging/signing and CI hosting                                                                                                     |
+| 1: Architecture/setup     | TypeScript, Vite, Node, Electron, lint/format, typed schemas, lockfile, documentation, tests                                                                                          | Windows installation/runtime acceptance and code signing                                                                                        |
 | 2: Command center         | Live procedural 3D face, surface particles, orbital nodes, all navigation modules, command bar, agent/task details, honest metrics                                                    | More sophisticated rig/visemes and owner visual acceptance                                                                                      |
 | 3: Orchestration          | Typed DAG workflows, two concurrent tool slots, dependent outputs, supervisor checks, SQLite history, restart blocking, idempotency, approval enforcement                             | Distributed workers and richer general-purpose planning strategies                                                                              |
 | 4: Browser/computer tools | Scoped file inventory and approved creation; isolated Chromium inspector implementation; real fixture browser tests                                                                   | Public-site execution is blocked by this cloud host's direct DNS; Windows UI Automation adapter implemented; native Windows testing outstanding |
@@ -18,14 +18,14 @@ This is a functioning local-first foundation for **ULTIMATE AGENTS — BOTH**. I
 
 ## Test evidence
 
-- `npm run check`: TypeScript and ESLint pass; all **32 backend/integration/security tests** pass; production client/server build passes.
+- `npm run check`: TypeScript and ESLint pass; all **35 backend/integration/security/packaging tests** pass; production client/server build passes.
 - `npm run test:e2e`: **12 browser journeys** cover rendering and viewport geometry, every navigation destination, real workflow execution and retained history, memory correction/deletion, approval enforcement, emergency stop, policy settings, deterministic browser navigation, coordinated multi-agent work, project/schedule controls, typed Computer controls, and verified Playwright fill/click/key interactions with rejection tests.
 - `npm run test:windows`: **NOT RUN on Windows**. Invoking it on Linux exits nonzero with the platform requirement. Native C#/PowerShell compilation and PC control remain unverified.
-- `npm run test:desktop`: Electron **44.7.2** launches, pairs to its private service, renders the core, exposes no renderer `require`, and completes a real project workflow plus supervisor verification. Tested on Linux/Xvfb in the isolated cloud container. This is not a Windows validation result. Test-mode Chromium sandbox disabling is explicitly isolated to this environment.
+- `npm run test:desktop`: Electron **44.7.2** launches, pairs to its private service, renders the core, exposes no renderer `require`, and completes a real project workflow plus supervisor verification. Repeated launch reuses the existing instance, and closing Electron stops its service. Tested on Linux/Xvfb in the isolated cloud container. This is not a Windows validation result. Test-mode Chromium sandbox disabling is explicitly isolated to this environment.
 - `bash scripts/cloud-install.sh`: frozen-lockfile installation, explicit Electron binary setup with checksum verification, build and backend tests executed successfully. Dependencies are reusable; the Electron 44 binary download uses Node's supported environment proxy.
 - Development mode: Vite middleware page renders with no JavaScript page errors.
 - `npm audit`: **0 known vulnerabilities** across runtime and development dependencies after upgrading Electron. The earlier version's findings were resolved. An audit result is not a security certification.
-- Source review: no API keys in tracked files; no arbitrary shell tool; no forbidden product branding; no external deployment, publication, message sending or Git push.
+- Source review: no API keys in tracked files; no arbitrary shell tool; no forbidden product branding; no external deployment or message sending; Git publication is explicitly authorized for this delivery.
 
 Assertions check the actual outcome: no protected file before approval; consumed approval cannot be reused; unauthorized tools fail; traversal/symlink writes fail; memory is scope-filtered; untrusted content cannot register tools; cancellation prevents subsequent worker steps; restart does not replay in-flight actions; independent workers overlap and dependent workers receive actual artifacts.
 
@@ -59,7 +59,7 @@ OpenAI is selected. The ignored local `.env` records the provider/model and Linu
 - `AGENTS_OPENAI_API_KEY` as a secret requirement bound to `api.openai.com`.
 - The secret destination adds `api.openai.com` to the draft's network access.
 
-The `OPENAI_` prefix is reserved by the cloud platform, so the app uses `AGENTS_OPENAI_API_KEY`. Enter the actual key securely in environment settings, verify the model and token prices, then review/save and publish the environment when appropriate. The draft save does not supply credentials, apply runtime configuration, execute scripts, or publish anything. No new-task restoration is claimed.
+The `OPENAI_` prefix is reserved by the cloud platform, so the app uses `AGENTS_OPENAI_API_KEY`. Keep this earlier draft pending until Windows testing is reviewed. No key is requested for this phase. Future paid-provider setup requires the owner's approval and secure environment configuration. The draft does not supply credentials, apply runtime configuration, execute scripts, or publish anything. No new-task restoration is claimed.
 
 ## Next milestones
 
@@ -76,3 +76,14 @@ The `OPENAI_` prefix is reserved by the cloud platform, so the app uses `AGENTS_
 The native UI Automation/Win32 worker, typed delegation across ten agents, one-use observations, guarded input, approved Playwright interactions and offline vision builder are implemented. Cloud tests use explicitly labeled native transport fixtures; they establish orchestration and boundary behavior, not Windows OS behavior. The native harness has not run on Windows. See [implementation audit and Windows acceptance guide](WINDOWS_CONTROL.md).
 
 The previously saved environment draft remains pending and unchanged during this phase. No keys, prices, network rules, startup configuration, or publication were changed. No paid API call was made.
+
+## Windows launch and packaging update
+
+- Both the fixed worker and fixture builder use process-only PowerShell execution policy. No global security settings change; task data remains stdin JSON. The worker removes the process-policy variable before application launch.
+- The Windows audit also corrected extended arrow/Home/End key flags and checks failed cursor reads. These native changes still require Windows execution.
+- The Windows x64 Electron package includes its runtime, desktop/Start menu shortcuts, a separate fixture-test shortcut, and an exact-file uninstaller that preserves runtime data. Installed Edge/Chrome discovery avoids downloading a second browser.
+- A Linux smoke check starts the staged runtime-only server, serves its built UI, pairs securely, registers all ten agents, and completes a real project workflow. This does not run `AGENTS.exe`.
+- A real Windows `.exe` installer is cross-compiled with NSIS from Linux and structurally checked as a PE executable. Installation, shortcut behavior, native compilation, and UI Automation remain Windows-only acceptance items. The package is unsigned.
+- `.github/workflows/windows.yml` provides a native Windows compilation and installer build job. Cloud GitHub API access is blocked, so this delivery does not claim that workflow has run or passed.
+
+See [installation, fixture testing, and reproduction commands](WINDOWS_INSTALL.md). The source policy regression, browser discovery and exact uninstall-manifest checks are included in the 35 passing tests. All 12 browser journeys and the enhanced Linux Electron smoke pass. No paid API access or saved environment-configuration changes were used.

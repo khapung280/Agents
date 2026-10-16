@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import express from "express";
 import { chromium } from "playwright";
 import { allowedUrl } from "./security.js";
+import { browserExecutable } from "./browser-path.js";
 import { createApp } from "./app.js";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
@@ -13,9 +14,7 @@ const runtime = createApp({
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
-  browserPath:
-    process.env.CHROMIUM_PATH ||
-    (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined),
+  browserPath: browserExecutable(),
   browserNoSandbox: process.env.AGENTS_BROWSER_NO_SANDBOX === "1",
 });
 if (!process.argv.includes("--dev") && existsSync("dist/index.html")) {
@@ -60,16 +59,20 @@ runtime.server.listen(port, "127.0.0.1", () => {
   );
 });
 let stopping = false;
+const shutdown = () => {
+  if (stopping) return;
+  stopping = true;
+  void runtime.close().then(() => process.exit(0));
+};
 for (const signal of ["SIGTERM", "SIGINT"] as const)
-  process.on(signal, () => {
-    if (stopping) return;
-    stopping = true;
-    void runtime.close().then(() => process.exit(0));
-  });
-
-process.on("disconnect", () => {
-  if (!stopping) {
-    stopping = true;
-    void runtime.close().then(() => process.exit(0));
-  }
+  process.on(signal, shutdown);
+process.on("disconnect", shutdown);
+process.on("message", (message) => {
+  if (
+    message &&
+    typeof message === "object" &&
+    "type" in message &&
+    message.type === "shutdown"
+  )
+    shutdown();
 });

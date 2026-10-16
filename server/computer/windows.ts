@@ -30,8 +30,26 @@ export type NativeTransport = (
   signal: AbortSignal,
 ) => Promise<NativeResult>;
 
-// Fixed executable and script only. User data travels over stdin, never command interpolation.
+// Process-only policy for this fixed, trusted project script; never a user-supplied path.
+export function windowsWorkerArguments() {
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-Sta",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    resolve("native/windows/worker.ps1"),
+  ];
+}
 export const runWindowsWorker: NativeTransport = (request, signal) =>
+  invokeWindowsWorker(request, signal);
+// Fixed executable and script only. User data travels over stdin, never command interpolation.
+const invokeWindowsWorker = (
+  request: NativeRequest,
+  signal: AbortSignal,
+): Promise<NativeResult> =>
   new Promise((resolveResult, reject) => {
     signal.throwIfAborted();
     const systemRoot = process.env.SystemRoot || "C:\\Windows";
@@ -43,14 +61,7 @@ export const runWindowsWorker: NativeTransport = (request, signal) =>
         "v1.0",
         "powershell.exe",
       ),
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Sta",
-        "-File",
-        resolve("native/windows/worker.ps1"),
-      ],
+      windowsWorkerArguments(),
       {
         windowsHide: true,
         shell: false,

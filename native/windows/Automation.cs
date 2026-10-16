@@ -178,12 +178,12 @@ namespace AgentsDesktop {
           Dictionary<string,ushort> keys=new Dictionary<string,ushort> { {"Tab",9},{"Escape",27},{"Enter",13},{"ArrowLeft",37},{"ArrowRight",39},{"ArrowUp",38},{"ArrowDown",40},{"Home",36},{"End",35} };
           Foreground(hwnd);
           if (key=="Control+A") Send(new INPUT[] {Key(17,0,0),Key(65,0,0),Key(65,0,2),Key(17,0,2)});
-          else { if (!keys.ContainsKey(key)) throw new Exception("Key is not allowed."); ushort vk=keys[key]; Send(new INPUT[] {Key(vk,0,0),Key(vk,0,2)}); }
+          else { if (!keys.ContainsKey(key)) throw new Exception("Key is not allowed."); ushort vk=keys[key]; uint extended=(vk>=35 && vk<=40) ? 1U : 0U; Send(new INPUT[] {Key(vk,0,extended),Key(vk,0,extended|2)}); }
         }
       } else throw new Exception("Unsupported native action.");
     }
     public static bool CursorOnElement(long handle,string elementId) {
-      AutomationElement e=Target(new IntPtr(handle),elementId); POINT cursor; GetCursorPos(out cursor);
+      AutomationElement e=Target(new IntPtr(handle),elementId); POINT cursor; if (!GetCursorPos(out cursor)) throw new Exception("Cannot verify cursor position.");
       return e.Current.BoundingRectangle.Contains(cursor.X,cursor.Y);
     }
     public static string Capture(long handle,string executable) {

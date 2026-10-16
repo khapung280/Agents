@@ -27,7 +27,7 @@ SetCompressor /SOLID lzma
 Section "AGENTS" SEC_MAIN
   SetShellVarContext current
   SetOutPath "$INSTDIR"
-  File /r "${PACKAGE_DIR}/*"
+  File /r "${PACKAGE_DIR}\*"
   WriteUninstaller "$INSTDIR\Uninstall AGENTS.exe"
   WriteRegStr HKCU "Software\UltimateAgentsBoth" "InstallDir" "$INSTDIR"
   CreateDirectory "$SMPROGRAMS\Ultimate Agents Both"

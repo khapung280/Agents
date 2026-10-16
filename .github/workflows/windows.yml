@@ -27,12 +27,33 @@ jobs:
             # Official NSIS distribution; SHA-256 also published in Microsoft's WinGet manifest:
             # https://github.com/microsoft/winget-pkgs/blob/master/manifests/n/NSIS/NSIS/3.11/NSIS.NSIS.installer.yaml
             $expected = '38D49F8FE09B1C332B01D0940E57B7258F4447733643273A01C59959AD9D3B0A'
-            $stage = 'download official installer'
-            Invoke-WebRequest "https://downloads.sourceforge.net/project/nsis/NSIS%203/$version/nsis-$version-setup.exe" -OutFile $setup
-            $stage = 'verify installer SHA-256'
-            if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne $expected) {
-              throw 'NSIS download checksum mismatch; refusing to execute it.'
+            $stage = 'download and verify official installer'
+            $sources = @(
+              "https://sourceforge.net/projects/nsis/files/NSIS%203/$version/nsis-$version-setup.exe/download",
+              "https://downloads.sourceforge.net/project/nsis/NSIS%203/$version/nsis-$version-setup.exe",
+              "https://netix.dl.sourceforge.net/project/nsis/NSIS%203/$version/nsis-$version-setup.exe"
+            )
+            $verified = $false
+            $downloadIssues = @()
+            foreach ($source in $sources) {
+              try {
+                $response = Invoke-WebRequest $source -OutFile $setup -PassThru -TimeoutSec 60 -MaximumRedirection 5
+              } catch {
+                $downloadIssues += "${source}: $($_.Exception.Message)"
+                continue
+              }
+              $actualHash = (Get-FileHash $setup -Algorithm SHA256).Hash
+              if ($actualHash -eq $expected) { $verified = $true; break }
+              $bytes = [IO.File]::ReadAllBytes($setup)
+              $detail = "${source}: received $($bytes.Length) bytes, Content-Type $($response.Headers['Content-Type']), SHA-256 $actualHash"
+              if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x4d -and $bytes[1] -eq 0x5a) {
+                throw "NSIS executable checksum mismatch; refusing to execute it. $detail"
+              }
+              # A mirror may serve an HTML download/challenge page with HTTP 200.
+              # Try another official source; the same pinned checksum remains mandatory.
+              $downloadIssues += "Unexpected non-executable response: $detail"
             }
+            if (!$verified) { throw "No verified NSIS download. $($downloadIssues -join '; ')" }
             # /D must be the final argument; NSIS accepts spaces here without extra quotes.
             $stage = 'install into runner temporary directory'
             $install = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$nsisRoot") -Wait -PassThru

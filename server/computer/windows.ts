@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { z } from "zod";
+import { collectWindowsWorkerResult } from "./worker-result.js";
 import {
   WindowsPolicy,
   WindowEvidence,
@@ -43,116 +43,44 @@ export function windowsWorkerArguments() {
     resolve("native/windows/worker.ps1"),
   ];
 }
-export const runWindowsWorker: NativeTransport = (request, signal) =>
-  invokeWindowsWorker(request, signal);
 // Fixed executable and script only. User data travels over stdin, never command interpolation.
-const invokeWindowsWorker = (
-  request: NativeRequest,
-  signal: AbortSignal,
-): Promise<NativeResult> =>
-  new Promise((resolveResult, reject) => {
-    signal.throwIfAborted();
-    const systemRoot = process.env.SystemRoot || "C:\\Windows";
-    const child = spawn(
-      join(
-        systemRoot,
-        "System32",
-        "WindowsPowerShell",
-        "v1.0",
-        "powershell.exe",
-      ),
-      windowsWorkerArguments(),
-      {
-        windowsHide: true,
-        shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
-        // Do not pass model keys, proxy credentials, NODE_OPTIONS, or unrelated service secrets to applications.
-        env: {
-          ...Object.fromEntries(
-            [
-              "SystemRoot",
-              "WINDIR",
-              "TEMP",
-              "TMP",
-              "USERPROFILE",
-              "LOCALAPPDATA",
-              "APPDATA",
-              "ProgramFiles",
-              "ProgramFiles(x86)",
-              "ProgramW6432",
-              "USERNAME",
-              "USERDOMAIN",
-              "COMPUTERNAME",
-            ].flatMap((key) =>
-              process.env[key] ? [[key, process.env[key]!]] : [],
-            ),
+export const runWindowsWorker: NativeTransport = async (request, signal) => {
+  signal.throwIfAborted();
+  const systemRoot = process.env.SystemRoot || "C:\\Windows";
+  const child = spawn(
+    join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    windowsWorkerArguments(),
+    {
+      windowsHide: true,
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+      // Do not pass model keys, proxy credentials, NODE_OPTIONS, or unrelated service secrets to applications.
+      env: {
+        ...Object.fromEntries(
+          [
+            "SystemRoot",
+            "WINDIR",
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+            "LOCALAPPDATA",
+            "APPDATA",
+            "ProgramFiles",
+            "ProgramFiles(x86)",
+            "ProgramW6432",
+            "USERNAME",
+            "USERDOMAIN",
+            "COMPUTERNAME",
+          ].flatMap((key) =>
+            process.env[key] ? [[key, process.env[key]!]] : [],
           ),
-          PATH: join(systemRoot, "System32"),
-        },
+        ),
+        PATH: join(systemRoot, "System32"),
       },
-    );
-    let output = "",
-      error = "",
-      settled = false,
-      interrupted = false;
-    const finish = (err?: Error, result?: NativeResult) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      if (err) reject(err);
-      else resolveResult(result!);
-    };
-    const abort = () => {
-      interrupted = true;
-      child.kill(); // Wait for close before releasing the single desktop execution slot.
-    };
-    const timer = setTimeout(abort, 30000);
-    signal.addEventListener("abort", abort, { once: true });
-    child.on("error", (e) => finish(e));
-    child.stdin.on("error", () => {
-      /* close/error below carries the worker outcome */
-    });
-    child.stdout.on("data", (chunk) => {
-      output += chunk.toString();
-      if (output.length > 16 * 1024 * 1024) {
-        child.kill();
-        finish(new Error("Windows evidence exceeded size limit"));
-      }
-    });
-    child.stderr.on("data", (chunk) => {
-      error = (error + chunk.toString()).slice(0, 4000);
-    });
-    child.on("close", (code) => {
-      if (interrupted)
-        return finish(
-          new Error(
-            "Windows execution interrupted; an input may already have occurred. Observe again before any retry.",
-          ),
-        );
-      if (code !== 0)
-        return finish(
-          new Error(`Windows worker failed: ${error || "no diagnostic"}`),
-        );
-      try {
-        const parsed = z
-          .object({
-            window: WindowEvidence,
-            png: z.string().max(14 * 1024 * 1024),
-            verified: z.string().min(1),
-          })
-          .parse(JSON.parse(output.replace(/^\uFEFF/, "")));
-        finish(undefined, parsed);
-      } catch {
-        finish(
-          new Error(
-            "Windows worker returned invalid evidence; do not assume the action succeeded.",
-          ),
-        );
-      }
-    });
-    child.stdin.end(JSON.stringify(request));
-  });
+    },
+  );
+  return collectWindowsWorkerResult(child, request, signal);
+};
 
 export class WindowsComputer {
   private observations = new Map<string, ComputerObservation>();

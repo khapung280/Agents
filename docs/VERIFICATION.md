@@ -18,7 +18,7 @@ This is a functioning local-first foundation for **ULTIMATE AGENTS — BOTH**. I
 
 ## Test evidence
 
-- `npm run check`: TypeScript and ESLint pass; all **35 backend/integration/security/packaging tests** pass; production client/server build passes.
+- `npm run check`: TypeScript and ESLint pass; all **40 backend/integration/security/packaging tests** pass; production client/server build passes.
 - `npm run test:e2e`: **12 browser journeys** cover rendering and viewport geometry, every navigation destination, real workflow execution and retained history, memory correction/deletion, approval enforcement, emergency stop, policy settings, deterministic browser navigation, coordinated multi-agent work, project/schedule controls, typed Computer controls, and verified Playwright fill/click/key interactions with rejection tests.
 - `npm run test:windows`: **NOT RUN on Windows**. Invoking it on Linux exits nonzero with the platform requirement. Native C#/PowerShell compilation passed on Windows CI; interactive PC control remains unverified.
 - `npm run test:desktop`: Electron **44.7.2** launches, pairs to its private service, renders the core, exposes no renderer `require`, and completes a real project workflow plus supervisor verification. Repeated launch reuses the existing instance, and closing Electron stops its service. Tested on Linux/Xvfb in the isolated cloud container. This is not a Windows validation result. Test-mode Chromium sandbox disabling is explicitly isolated to this environment.
@@ -86,7 +86,7 @@ The previously saved environment draft remains pending and unchanged during this
 - A real Windows `.exe` installer was built on Windows using checksum-pinned NSIS 3.11. Installation, shortcut behavior, and interactive UI Automation remain real-device acceptance items. The package is unsigned.
 - [Windows package run 38839686115](https://github.com/khapung280/Agents/actions/runs/38839686115) succeeded for commit `303916c8ee473c7d008c9da23ef8619e3eeb1a32`, including native compilation, installer creation, artifact upload/download, and installer SHA-256 verification. The downloadable artifact is `Ultimate-Agents-Both-Windows-x64`. This run predates the Settings diagnostics update below.
 
-See [installation, fixture testing, and reproduction commands](WINDOWS_INSTALL.md). The source policy regression, browser discovery and exact uninstall-manifest checks are included in the 35 passing tests. All 12 browser journeys and the enhanced Linux Electron smoke pass. No paid API access or saved environment-configuration changes were used.
+See [installation, fixture testing, and reproduction commands](WINDOWS_INSTALL.md). The source policy regression, browser discovery and exact uninstall-manifest checks are included in the 40 passing tests. All 12 browser journeys and the enhanced Linux Electron smoke pass. No paid API access or saved environment-configuration changes were used.
 
 ## Live preview and runtime diagnostics review — 2026-10-16
 
@@ -100,3 +100,9 @@ The existing production app was opened in actual Chromium with an isolated empty
 The software renderer measured approximately 19 browser animation frames per second in this run; this is not a hardware GPU benchmark. The mobile Business/Supervisor caption collisions and small labels remain visual gaps. The face is a procedural rig; advanced phoneme lip-sync, live voice behavior, and Windows GPU performance remain unverified. Modal accessible naming and focus return also need a follow-up accessibility review. No shareable interactive preview endpoint is available in this environment; no external deployment was performed.
 
 Settings now reads Windows readiness from the backend instead of showing a hardcoded disconnected message. It reports host platform, application policy, allowlist size, and whether native observation was verified during this session. Configured availability and a successful observation do not certify arbitrary PC actions. The browser regression compares these fields against the actual runtime response. Saved environment configuration remains pending and unchanged.
+
+## Worker lifecycle phase — 2026-10-16
+
+The Windows transport now waits for actual child close after an output-limit or process error, retains the single desktop slot while termination is pending, catches cancellation during listener setup, and decodes split UTF-8 output correctly. Five new process-boundary regression tests cover these cases and failed/invalid output. They do not execute PowerShell or control a Windows desktop. See [worker lifecycle details](WINDOWS_CONTROL.md#worker-lifecycle-reliability-update).
+
+The earlier Settings update also passed [Windows package run 38873350968](https://github.com/khapung280/Agents/actions/runs/38873350968), including native compilation and uploaded-installer SHA-256 verification. That run predates this transport fix; a new installer must be built from the transport-fix commit.

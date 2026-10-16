@@ -113,4 +113,12 @@ Live vision/model planning is intentionally not enabled here. Before adding tran
 
 ## Remaining work
 
-Native compilation and execution on actual Windows; the acceptance matrix above; broader app/provider coverage; persistent browser sessions and account-specific external actions; live OpenAI vision transport with reviewed spending; signed packaging and independent security review. Free-form autonomous reasoning is not implemented by the deterministic local tools. Owner-defined DAGs execute and verify through the existing orchestrator, but computer inputs remain individually approved.
+Interactive execution on actual Windows (native compilation has passed in Windows CI); the acceptance matrix above; broader app/provider coverage; persistent browser sessions and account-specific external actions; live OpenAI vision transport with reviewed spending; signed packaging and independent security review. Free-form autonomous reasoning is not implemented by the deterministic local tools. Owner-defined DAGs execute and verify through the existing orchestrator, but computer inputs remain individually approved.
+
+## Worker lifecycle reliability update
+
+The output collector now keeps the desktop execution slot until the PowerShell child's `close` event on every outcome, including output overflow and process errors. Requesting termination alone cannot allow another desktop operation to start. Cancellation during launch setup is also caught before writing a request. If termination is refused and the child remains alive, the slot remains occupied; it does not permit overlapping desktop operations.
+
+The collector limits stdout to 16 MiB of bytes, discards later output after failure, and preserves UTF-8 characters split across stdout/stderr chunks. Timeout, cancellation, invalid evidence, and oversized output cannot become successful observations even if the child later exits with code zero. There is no automatic input retry.
+
+Five cross-platform regression tests use explicit process-boundary fixtures for Unicode/BOM decoding, overlapping-operation rejection during delayed close, cancellation before/after listener setup, the 30-second deadline, and failure diagnostics. These establish service behavior, not actual PowerShell termination or Windows UI behavior. Fixed script paths, process-only execution policy, stdin JSON, minimal child environment, approvals, and application allowlists are preserved.

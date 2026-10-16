@@ -15,6 +15,36 @@ jobs:
         with:
           node-version: "24"
           cache: npm
+      - name: Provision pinned NSIS 3.11
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '3.11'
+          $setup = Join-Path $env:RUNNER_TEMP "nsis-$version-setup.exe"
+          $nsisRoot = Join-Path $env:RUNNER_TEMP "nsis-$version"
+          # Official NSIS distribution; SHA-256 also published in Microsoft's WinGet manifest:
+          # https://github.com/microsoft/winget-pkgs/blob/master/manifests/n/NSIS/NSIS/3.11/NSIS.NSIS.installer.yaml
+          $expected = '38D49F8FE09B1C332B01D0940E57B7258F4447733643273A01C59959AD9D3B0A'
+          Invoke-WebRequest "https://downloads.sourceforge.net/project/nsis/NSIS%203/$version/nsis-$version-setup.exe" -OutFile $setup
+          if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne $expected) {
+            throw 'NSIS download checksum mismatch; refusing to execute it.'
+          }
+          # /D must be the final argument; NSIS accepts spaces here without extra quotes.
+          $install = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$nsisRoot") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "NSIS installation failed: $($install.ExitCode)" }
+          $compiler = @(
+            (Join-Path $nsisRoot 'makensis.exe'),
+            (Join-Path $nsisRoot 'Bin\makensis.exe')
+          ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (!$compiler) { throw "Pinned NSIS compiler missing under $nsisRoot" }
+          $env:NSISDIR = $nsisRoot
+          $actualVersion = (& $compiler /VERSION | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualVersion -ne "v$version") {
+            throw "Unexpected NSIS compiler version: $actualVersion"
+          }
+          "NSISDIR=$nsisRoot" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "AGENTS_NSIS_COMPILER=$compiler" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Verified NSIS $actualVersion at $compiler; SHA-256 $expected"
       - run: npm ci
       - run: npm run check
       - name: Compile native worker without desktop actions
@@ -24,13 +54,19 @@ jobs:
       - name: Build per-user installer
         shell: powershell
         run: |
-          $compiler = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          if (!(Test-Path $compiler)) { throw 'NSIS is required on this Windows runner.' }
+          $compiler = $env:AGENTS_NSIS_COMPILER
+          if (!$compiler -or !(Test-Path -LiteralPath $compiler -PathType Leaf)) { throw 'Verified NSIS compiler is unavailable.' }
           & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" installer/agents.nsi
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
-          Get-FileHash artifacts/windows/Ultimate-Agents-Both-Setup.exe -Algorithm SHA256 | Format-List
-          (Get-FileHash artifacts/windows/Ultimate-Agents-Both-Setup.exe -Algorithm SHA256).Hash | Set-Content artifacts/windows/Ultimate-Agents-Both-Setup.exe.sha256
-      - uses: actions/upload-artifact@v4
+          $installer = 'artifacts/windows/Ultimate-Agents-Both-Setup.exe'
+          $bytes = [IO.File]::ReadAllBytes((Join-Path $pwd $installer))
+          if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x4d -or $bytes[1] -ne 0x5a) { throw 'Installer is missing or not a Windows executable.' }
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash
+          $hash | Set-Content "$installer.sha256" -Encoding ascii
+          Write-Host "Installer SHA-256: $hash"
+      - name: Upload Windows installer
+        id: upload
+        uses: actions/upload-artifact@v4
         with:
           name: Ultimate-Agents-Both-Windows-x64
           path: |
@@ -38,3 +74,36 @@ jobs:
             artifacts/windows/package-info.json
             artifacts/windows/Ultimate-Agents-Both-Setup.exe.sha256
           if-no-files-found: error
+          compression-level: 0
+      - name: Download uploaded installer for verification
+        uses: actions/download-artifact@v4
+        with:
+          name: Ultimate-Agents-Both-Windows-x64
+          path: ${{ runner.temp }}/agents-downloaded-installer
+      - name: Verify published artifact and report checksum
+        shell: pwsh
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          $directory = Join-Path $env:RUNNER_TEMP 'agents-downloaded-installer'
+          $name = 'Ultimate-Agents-Both-Setup.exe'
+          $downloaded = Join-Path $directory $name
+          $expected = (Get-Content (Join-Path $directory "$name.sha256") -Raw).Trim()
+          $builtHash = (Get-FileHash "artifacts/windows/$name" -Algorithm SHA256).Hash
+          $actual = (Get-FileHash $downloaded -Algorithm SHA256).Hash
+          if ($expected -notmatch '^[0-9A-Fa-f]{64}$' -or $actual -ne $expected -or $actual -ne $builtHash) {
+            throw 'Uploaded/downloaded installer checksum verification failed.'
+          }
+          $info = Get-Content (Join-Path $directory 'package-info.json') -Raw | ConvertFrom-Json
+          if ($info.commit -ne $env:GITHUB_SHA -or $info.workingTreeDirty) { throw 'Package source provenance does not match this clean CI commit.' }
+          @(
+            '## Verified Windows installer',
+            "Source commit: $env:GITHUB_SHA",
+            'Built on Windows with checksum-verified NSIS 3.11.',
+            'Uploaded artifact was downloaded again and its installer SHA-256 matched the original build and checksum file.',
+            "Installer: $name",
+            "SHA-256: $actual",
+            "[Download Ultimate-Agents-Both-Windows-x64]($env:ARTIFACT_URL)",
+            'Sign into GitHub, download the artifact ZIP, extract it, then run the installer.',
+            'Native compilation passed. Interactive desktop control and installation on your laptop still require real-device testing.'
+          ) -join "`n`n" | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

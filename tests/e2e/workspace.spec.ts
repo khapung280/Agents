@@ -224,6 +224,36 @@ test("settings persist real autonomy policy and visual quality", async ({
   await pair(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  const runtimeState = await (await page.request.get("/api/state")).json();
+  await expect(
+    dialog.getByRole("status", { name: "Windows control status" }),
+  ).toHaveText(runtimeState.capabilities.computer.reason);
+  const readiness = dialog
+    .locator("section")
+    .filter({
+      has: page.getByRole("heading", { name: "Windows control readiness" }),
+    });
+  await expect(
+    readiness.getByText(runtimeState.capabilities.computer.platform, {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    readiness
+      .locator(".setting-row")
+      .filter({ hasText: "Allowlisted applications" })
+      .locator("strong"),
+  ).toHaveText(String(runtimeState.capabilities.computer.apps.length));
+  await expect(
+    readiness
+      .locator(".setting-row")
+      .filter({ hasText: "Native observation this session" })
+      .locator("strong"),
+  ).toHaveText(
+    runtimeState.capabilities.computer.verifiedThisSession
+      ? "Verified observation"
+      : "Not verified",
+  );
   await dialog.getByRole("button", { name: /autonomous Also run/ }).click();
   expect(
     (await (await page.request.get("/api/state")).json()).policy.mode,

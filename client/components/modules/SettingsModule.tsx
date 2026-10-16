@@ -126,12 +126,44 @@ export function SettingsModule({
         </label>
       </section>
       <section>
+        <h3>Windows control readiness</h3>
+        <p role="status" aria-label="Windows control status">
+          {s.capabilities.computer.reason}
+        </p>
+        <div className="setting-row">
+          <span>Execution host</span>
+          <strong>{s.capabilities.computer.platform}</strong>
+        </div>
+        <div className="setting-row">
+          <span>Application policy</span>
+          <strong>
+            {s.capabilities.computer.enabled ? "Enabled" : "Disabled"}
+          </strong>
+        </div>
+        <div className="setting-row">
+          <span>Allowlisted applications</span>
+          <strong>{s.capabilities.computer.apps.length}</strong>
+        </div>
+        <div className="setting-row">
+          <span>Native observation this session</span>
+          <strong>
+            {s.capabilities.computer.verifiedThisSession
+              ? "Verified observation"
+              : "Not verified"}
+          </strong>
+        </div>
+        <p>
+          {s.capabilities.computer.available
+            ? "The adapter is configured for approved operations. Each input still requires its own approval and outcome verification."
+            : "Native operations are unavailable. Local workspace tools remain available."}
+        </p>
+      </section>
+      <section>
         <h3>Runtime connections</h3>
         <p>
           <Monitor size={15} /> Local Node service ·{" "}
           {Math.floor(s.uptimeSeconds / 60)} minutes uptime
         </p>
-        <p>Windows desktop service: not connected</p>
         <p>
           Voice: browser-dependent; English recognition requested. Nepali, wake
           word and offline recognition are not validated.

@@ -86,12 +86,20 @@ jobs:
         run: powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/windows/check-build.ps1
       - run: npm run package:windows
       - name: Build per-user installer
-        shell: powershell
+        shell: pwsh
         run: |
           $compiler = $env:AGENTS_NSIS_COMPILER
           if (!$compiler -or !(Test-Path -LiteralPath $compiler -PathType Leaf)) { throw 'Verified NSIS compiler is unavailable.' }
-          & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" installer/agents.nsi
-          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
+          $compilerOutput = & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" installer/agents.nsi 2>&1
+          $compilerExit = $LASTEXITCODE
+          $compilerOutput | ForEach-Object { Write-Host $_ }
+          if ($compilerExit -ne 0) {
+            $detail = ($compilerOutput | Select-Object -Last 30 | Out-String).Trim()
+            $escaped = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=NSIS compiler exit ${compilerExit}::$escaped"
+            $detail | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            throw "Installer compilation failed with exit code $compilerExit."
+          }
           $installer = 'artifacts/windows/Ultimate-Agents-Both-Setup.exe'
           $bytes = [IO.File]::ReadAllBytes((Join-Path $pwd $installer))
           if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x4d -or $bytes[1] -ne 0x5a) { throw 'Installer is missing or not a Windows executable.' }

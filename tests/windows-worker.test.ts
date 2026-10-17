@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -235,4 +236,80 @@ test("worker diagnostics preserve split Unicode, malformed evidence fails, and e
   assert.equal(settled, false);
   failed.process.emit("close", -2);
   await errorRejected;
+});
+
+test(
+  "real exited worker cannot hang on pipes inherited by a still-running descendant",
+  { timeout: 15000 },
+  async () => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `
+    const descendant = require('node:child_process').spawn(process.execPath,
+      ['-e', 'setTimeout(() => {}, 10000)'], {stdio:['ignore', process.stdout, process.stderr]});
+    process.stderr.write('DESCENDANT:' + descendant.pid + '\\n');
+    descendant.unref();
+    process.stdout.write(${JSON.stringify(JSON.stringify(evidence))});
+  `,
+      ],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    let descendant: number | undefined;
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+      const match = /DESCENDANT:(\d+)/.exec(stderr);
+      if (match) descendant = Number(match[1]);
+    });
+    const messages: string[] = [];
+    try {
+      const result = await collectWindowsWorkerResult(
+        child,
+        request,
+        new AbortController().signal,
+        (message) => messages.push(message),
+      );
+      assert.deepEqual(result, evidence);
+      assert.ok(descendant);
+      assert.doesNotThrow(
+        () => process.kill(descendant!, 0),
+        "Descendant must still be alive when the collector finishes",
+      );
+      assert.ok(messages.some((m) => m.includes("pipes remained open")));
+    } finally {
+      child.kill();
+      if (descendant) {
+        try {
+          process.kill(descendant);
+        } catch {
+          /* fixture already exited */
+        }
+      }
+    }
+  },
+);
+
+test("timeout reports last native stage without logging observation contents", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const child = worker();
+  const messages: string[] = [];
+  const promise = collectWindowsWorkerResult(
+    child.process,
+    request,
+    new AbortController().signal,
+    (message) => messages.push(message),
+  );
+  const rejected = assert.rejects(promise, /Last native stage: capture-window/);
+  child.process.stderr.emit("data", Buffer.from("AGENTS_STAGE: capture-"));
+  child.process.stderr.emit(
+    "data",
+    Buffer.from("window\nprivate window content\n"),
+  );
+  t.mock.timers.tick(30000);
+  child.process.emit("close", null);
+  await rejected;
+  assert.ok(messages.includes("Native stage: capture-window"));
+  assert.ok(messages.every((m) => !m.includes("private window content")));
 });

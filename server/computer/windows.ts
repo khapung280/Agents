@@ -28,6 +28,7 @@ export interface NativeResult {
 export type NativeTransport = (
   request: NativeRequest,
   signal: AbortSignal,
+  diagnostic?: (message: string) => void,
 ) => Promise<NativeResult>;
 
 // Process-only policy for this fixed, trusted project script; never a user-supplied path.
@@ -36,7 +37,8 @@ export function windowsWorkerArguments() {
     "-NoLogo",
     "-NoProfile",
     "-NonInteractive",
-    "-Sta",
+    // UI Automation clients run in MTA; this worker owns no UI thread.
+    "-Mta",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
@@ -44,7 +46,11 @@ export function windowsWorkerArguments() {
   ];
 }
 // Fixed executable and script only. User data travels over stdin, never command interpolation.
-export const runWindowsWorker: NativeTransport = async (request, signal) => {
+export const runWindowsWorker: NativeTransport = async (
+  request,
+  signal,
+  diagnostic,
+) => {
   signal.throwIfAborted();
   const systemRoot = process.env.SystemRoot || "C:\\Windows";
   const child = spawn(
@@ -79,7 +85,7 @@ export const runWindowsWorker: NativeTransport = async (request, signal) => {
       },
     },
   );
-  return collectWindowsWorkerResult(child, request, signal);
+  return collectWindowsWorkerResult(child, request, signal, diagnostic);
 };
 
 export class WindowsComputer {
@@ -96,6 +102,7 @@ export class WindowsComputer {
       policy?: ComputerPolicy;
       transport?: NativeTransport;
       now?: () => number;
+      diagnostic?: (message: string) => void;
     } = {},
   ) {
     try {
@@ -241,6 +248,7 @@ export class WindowsComputer {
       const native = await (this.options.transport ?? runWindowsWorker)(
         { command, executable: app.executable, before: before?.window },
         signal,
+        this.options.diagnostic,
       );
       signal.throwIfAborted();
       const window = WindowEvidence.parse(native.window);

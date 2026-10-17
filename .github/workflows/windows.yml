@@ -85,6 +85,23 @@ jobs:
         shell: powershell
         run: powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/windows/check-build.ps1
       - run: npm run package:windows
+      - name: Verify packaged validation watchdog without desktop actions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          $runtime = (Resolve-Path 'artifacts/windows/AGENTS/AGENTS.exe').Path
+          $entry = (Resolve-Path 'artifacts/windows/AGENTS/resources/app/dist-server/windows-smoke.js').Path
+          $stdout = Join-Path $env:RUNNER_TEMP 'agents-watchdog-stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'agents-watchdog-stderr.log'
+          $probe = Start-Process -FilePath $runtime -ArgumentList @(('"' + $entry + '"'), '--watchdog-self-test') -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          if (!$probe.WaitForExit(30000)) { $probe.Kill(); throw 'Packaged watchdog self-test exceeded 30 seconds.' }
+          $probe.WaitForExit()
+          Get-Content $stdout
+          Get-Content $stderr
+          if ($probe.ExitCode -ne 0) { throw "Packaged watchdog self-test failed: $($probe.ExitCode)" }
+          if (!(Select-String -Path $stdout -SimpleMatch 'PASS: watchdog self-test only' -Quiet)) { throw 'Packaged watchdog success receipt is missing.' }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE
       - name: Build per-user installer
         shell: pwsh
         run: |

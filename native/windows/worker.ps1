@@ -3,15 +3,19 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+function Write-Stage([string]$Stage) { [Console]::Error.WriteLine('AGENTS_STAGE: ' + $Stage) }
 try {
+  Write-Stage 'compile-worker'
   if ([Environment]::OSVersion.Platform -ne 'Win32NT') { throw 'Windows is required.' }
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase, System.Drawing, System.Windows.Forms
   $references = @([System.Windows.Automation.AutomationElement].Assembly.Location, [System.Windows.Automation.ControlType].Assembly.Location, [System.Windows.Rect].Assembly.Location, [System.Drawing.Bitmap].Assembly.Location, [System.Windows.Forms.Form].Assembly.Location)
   Add-Type -Path (Join-Path $PSScriptRoot 'Automation.cs') -ReferencedAssemblies $references
+  Write-Stage 'read-request'
   $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
   $command = $request.command
   $exe = [IO.Path]::GetFullPath([string]$request.executable)
   if (-not [IO.File]::Exists($exe)) { throw 'Authorized executable does not exist.' }
+  Write-Stage 'check-desktop'
   [AgentsDesktop.Native]::CheckDesktop()
   $windowId = 0L
   if ($command.kind -eq 'launch') {
@@ -21,8 +25,10 @@ try {
     $start.UseShellExecute = $false
     # The worker process override must not propagate to the launched application.
     $start.EnvironmentVariables.Remove('PSExecutionPolicyPreference')
+    Write-Stage 'launch-application'
     $process = [Diagnostics.Process]::Start($start)
     if (-not $process) { throw 'Application did not start.' }
+    Write-Stage 'wait-window'
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     do {
       Start-Sleep -Milliseconds 100
@@ -38,9 +44,11 @@ try {
     if (-not $request.before) { throw 'An observation is required.' }
     $windowId = [long]::Parse($request.before.windowId)
   } else { throw 'Unsupported Windows command.' }
+  Write-Stage 'observe-window'
   $window = [AgentsDesktop.Native]::Observe($windowId, $exe)
   $verification = 'Observed the authorized application window and captured a masked window image.'
   if ($command.kind -eq 'act') {
+    Write-Stage 'validate-target'
     $before = $request.before
     if ($window.processId -ne $before.processId -or $window.processStartedAt -ne $before.processStartedAt) { throw 'Process identity changed; observe again.' }
     foreach ($property in @('x','y','width','height')) {
@@ -58,7 +66,9 @@ try {
         if ([Math]::Abs($target.bounds.$property - $oldTarget.bounds.$property) -gt 1) { throw 'Element moved; observe again.' }
       }
     }
+    Write-Stage 'dispatch-action'
     [AgentsDesktop.Native]::Act($windowId, $exe, [string]$action.kind, [string]$action.elementId, [string]$action.text, [string]$action.key)
+    Write-Stage 'verify-postcondition'
     $deadline = [DateTime]::UtcNow.AddSeconds(3)
     $ok = $false
     do {
@@ -86,8 +96,11 @@ try {
   } elseif ($command.kind -eq 'launch') {
     $verification = 'Started the exact allowlisted executable without arguments and verified its process and visible window.'
   }
+  Write-Stage 'capture-window'
   $png = [AgentsDesktop.Native]::Capture($windowId, $exe)
+  Write-Stage 'serialize-evidence'
   @{ window = $window; png = $png; verified = $verification } | ConvertTo-Json -Depth 12 -Compress | ForEach-Object { [Console]::Out.Write($_) }
+  Write-Stage 'complete'
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
   exit 1

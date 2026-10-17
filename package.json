@@ -20,7 +20,7 @@
     "test:desktop": "node scripts/desktop-smoke.mjs",
     "setup:desktop": "node node_modules/electron/install.js",
     "test:windows": "tsx scripts/windows-smoke.ts",
-    "package:windows": "npm run build && esbuild scripts/windows-smoke.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/windows-smoke.js && node scripts/package-windows.mjs"
+    "package:windows": "npm run build && esbuild scripts/windows-smoke.ts scripts/windows-validation.ts --bundle --platform=node --format=esm --packages=external --outdir=dist-server && node scripts/package-windows.mjs"
   },
   "dependencies": {
     "@react-three/fiber": "^9.3.0",

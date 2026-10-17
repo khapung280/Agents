@@ -14,7 +14,7 @@ test("worker execution policy is process-scoped with a fixed script and no shell
     "-NoLogo",
     "-NoProfile",
     "-NonInteractive",
-    "-Sta",
+    "-Mta",
     "-ExecutionPolicy",
     "Bypass",
     "-File",

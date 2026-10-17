@@ -8,7 +8,11 @@ review an application policy; installing does not authorize PC actions.
 For the dedicated Windows test, double-click "Test Windows Control.cmd".
 It operates only on its own disposable test application. Avoid touching the
 keyboard or mouse during validation. It retains diagnostic evidence in a
-unique directory under your Windows temporary folder. A failed test must
+unique directory under your Windows temporary folder. Look for stage logs every
+five seconds and explicit PASS/FAIL; the overall limit is three minutes.
+The result directory contains validation.log and validation-result.json.
+The final press-any-key pause only keeps the completed result visible.
+Close any leftover disposable validation window before retrying. A failed test must
 not be counted as working PC control.
 
 The trusted worker and validation scripts use child-process-only PowerShell execution

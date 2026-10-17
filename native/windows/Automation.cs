@@ -154,7 +154,7 @@ namespace AgentsDesktop {
     }
     public static void Act(long handle,string executable,string kind,string elementId,string text,string key) {
       IntPtr hwnd=new IntPtr(handle); using (Process p=ProcessFor(hwnd,executable)) { }
-      if (kind=="focus") { if (!SetForegroundWindow(hwnd)) throw new Exception("Windows denied foreground activation; focus the authorized app manually."); return; }
+      if (kind=="focus") { if (GetForegroundWindow()==hwnd) return; if (!SetForegroundWindow(hwnd)) throw new Exception("Windows denied foreground activation; focus the authorized app manually."); return; }
       Foreground(hwnd); NoHeldModifiers();
       AutomationElement e=Target(hwnd,elementId);
       if (kind=="move" || kind=="click") {

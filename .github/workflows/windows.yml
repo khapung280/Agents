@@ -80,7 +80,19 @@ jobs:
             throw
           }
       - run: npm ci
-      - run: npm run check
+      - name: Run checks with failure diagnostics
+        shell: pwsh
+        run: |
+          $checkOutput = & npm.cmd run check 2>&1
+          $checkExit = $LASTEXITCODE
+          $checkOutput | ForEach-Object { Write-Host $_ }
+          if ($checkExit -ne 0) {
+            $detail = ($checkOutput | Select-Object -Last 90 | Out-String).Trim()
+            $escaped = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows checks failed::$escaped"
+            $detail | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            throw "Windows checks failed with exit code $checkExit."
+          }
       - name: Compile native worker without desktop actions
         shell: powershell
         run: powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/windows/check-build.ps1

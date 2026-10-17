@@ -242,13 +242,15 @@ test(
   "real exited worker cannot hang on pipes inherited by a still-running descendant",
   { timeout: 15000 },
   async () => {
+    // Windows puts non-detached Node children in a kill-on-parent-exit job.
+    // Detach this controlled helper so it really retains the inherited pipes.
     const child = spawn(
       process.execPath,
       [
         "-e",
         `
     const descendant = require('node:child_process').spawn(process.execPath,
-      ['-e', 'setTimeout(() => {}, 10000)'], {stdio:['ignore', process.stdout, process.stderr]});
+      ['-e', 'setTimeout(() => {}, 10000)'], {detached:true, windowsHide:true, stdio:['ignore', process.stdout, process.stderr]});
     process.stderr.write('DESCENDANT:' + descendant.pid + '\\n');
     descendant.unref();
     process.stdout.write(${JSON.stringify(JSON.stringify(evidence))});

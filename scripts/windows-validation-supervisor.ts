@@ -143,6 +143,12 @@ export function superviseValidation(options: {
         ),
       limits.heartbeatMs,
     );
+    child.stdout!.on("error", (error: Error) =>
+      fail(`Harness output stream failed: ${error.message}`),
+    );
+    child.stderr!.on("error", (error: Error) =>
+      fail(`Harness diagnostic stream failed: ${error.message}`),
+    );
     child.stdout!.setEncoding("utf8");
     child.stderr!.setEncoding("utf8");
     child.stdout!.on("data", (chunk: string) =>

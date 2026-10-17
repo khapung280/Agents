@@ -87,7 +87,8 @@ jobs:
           $checkExit = $LASTEXITCODE
           $checkOutput | ForEach-Object { Write-Host $_ }
           if ($checkExit -ne 0) {
-            $detail = ($checkOutput | Select-Object -Last 90 | Out-String).Trim()
+            $detail = ($checkOutput | Select-Object -Last 30 | Out-String).Trim()
+            if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
             $escaped = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
             Write-Output "::error title=Windows checks failed::$escaped"
             $detail | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

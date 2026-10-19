@@ -55,7 +55,7 @@ Read [Windows setup and native validation](docs/WINDOWS_CONTROL.md). `npm run te
 
 ## Model configuration
 
-The OpenAI adapter now uses the Responses API with strict typed workflow proposals, bounded requests, and persistent cost accounting. See the [AI brain audit, phase status and proposed next architecture](docs/AI_BRAIN_PHASES.md). Live model and vision-guided acceptance remain pending.
+The OpenAI adapter now uses the Responses API with strict typed workflow proposals, bounded requests, and persistent cost accounting. See the [AI brain audit, phase status and proposed next architecture](docs/AI_BRAIN_PHASES.md). Computer also includes guided plan/screen sessions with exact-image sharing approval, one-action review, evidence verification, and persistent recovery checkpoints. Live model and vision-guided acceptance remain pending.
 
 Copy `.env.example` to `.env` and configure it locally. Never commit `.env`.
 

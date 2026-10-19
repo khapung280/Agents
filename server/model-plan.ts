@@ -12,7 +12,7 @@ import {
 export const planningTools = toolNames.filter(
   (tool) =>
     !tool.startsWith("computer.") &&
-    !["model.plan", "browser.interact"].includes(tool),
+    !["model.plan", "model.vision", "browser.interact"].includes(tool),
 );
 export const ModelPlan = z
   .object({

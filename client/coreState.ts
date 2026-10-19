@@ -10,7 +10,11 @@ export function deriveCoreState(
   if (!connected || s.policy.stopped) return "offline";
   if (voice.listening) return "listening";
   if (voice.speaking) return "speaking";
-  if (s.metrics.approvals) return "approval";
+  if (
+    s.metrics.approvals ||
+    s.reasoningSessions.some((session) => session.state.startsWith("awaiting_"))
+  )
+    return "approval";
   const running = s.tasks.filter((t) => !t.workflow && t.state === "running");
   if (running.length) {
     const progress = s.events.find(
@@ -19,6 +23,7 @@ export function deriveCoreState(
     );
     if (progress?.message.startsWith("Verifying:")) return "verifying";
     if (running.some((t) => t.tool === "model.plan")) return "planning";
+    if (running.some((t) => t.tool === "model.vision")) return "observing";
     if (running.some((t) => t.tool.startsWith("model."))) return "thinking";
     if (
       running.some(

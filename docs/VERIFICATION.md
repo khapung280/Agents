@@ -24,8 +24,8 @@ The historical milestone table below describes the foundation; the linked phase 
 
 ## Test evidence
 
-- `npm run check`: TypeScript and ESLint pass; all **61 backend/integration/security/packaging tests** pass; production client/server build passes.
-- `npm run test:e2e`: **12 browser journeys** cover rendering and viewport geometry, every navigation destination, real workflow execution and retained history, memory correction/deletion, approval enforcement, emergency stop, policy settings, deterministic browser navigation, coordinated multi-agent work, project/schedule controls, typed Computer controls, and verified Playwright fill/click/key interactions with rejection tests.
+- `npm run check`: TypeScript and ESLint pass; all **71 backend/integration/security/packaging tests** pass; production client/server build passes.
+- `npm run test:e2e`: **14 browser journeys** cover rendering and viewport geometry, every navigation destination, real workflow execution and retained history, memory correction/deletion, approval enforcement, emergency stop, policy settings, deterministic browser navigation, coordinated multi-agent work, project/schedule controls, typed Computer controls, and verified Playwright fill/click/key interactions with rejection tests.
 - `npm run test:windows`: **owner-reported PASS on Windows 11 for the controlled fixture**. Not independently run on a real device by this cloud agent. Invoking it on Linux exits nonzero with the platform requirement. Native C#/PowerShell compilation passed on Windows CI; broader applications and model-guided input remain unverified.
 - `npm run test:desktop`: Electron **44.7.2** launches, pairs to its private service, renders the core, exposes no renderer `require`, and completes a real project workflow plus supervisor verification. Repeated launch reuses the existing instance, and closing Electron stops its service. Tested on Linux/Xvfb in the isolated cloud container. This is not a Windows validation result. Test-mode Chromium sandbox disabling is explicitly isolated to this environment.
 - `bash scripts/cloud-install.sh`: frozen-lockfile installation, explicit Electron binary setup with checksum verification, build and backend tests executed successfully. Dependencies are reusable; the Electron 44 binary download uses Node's supported environment proxy.
@@ -79,7 +79,7 @@ The `OPENAI_` prefix is reserved by the cloud platform, so the app uses `AGENTS_
 
 ## Windows integration phase update
 
-The native UI Automation/Win32 worker, typed delegation across ten agents, one-use observations, guarded input, approved Playwright interactions and offline vision builder are implemented. Cloud tests use explicitly labeled native transport fixtures; they establish orchestration and boundary behavior, not Windows OS behavior. The native harness has not run on Windows. See [implementation audit and Windows acceptance guide](WINDOWS_CONTROL.md).
+The native UI Automation/Win32 worker, typed delegation across ten agents, one-use observations, guarded input, approved Playwright interactions and offline vision builder are implemented. Cloud tests use explicitly labeled native transport fixtures; they establish orchestration and boundary behavior, not Windows OS behavior. The owner now reports a successful controlled-fixture run on Windows 11; broader app and live model-guided acceptance is still pending. See [implementation audit and Windows acceptance guide](WINDOWS_CONTROL.md).
 
 The previously saved environment draft remains pending and unchanged during this phase. No keys, prices, network rules, startup configuration, or publication were changed. No paid API call was made.
 

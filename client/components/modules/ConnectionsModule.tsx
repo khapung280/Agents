@@ -1,4 +1,5 @@
 import { ArrowUpRight } from "lucide-react";
+import { ReasoningPanel } from "../ReasoningPanel";
 
 import { AgentIcon, Badge, Empty } from "../Primitives";
 import type { ModuleContext } from "../Modules";
@@ -7,7 +8,8 @@ export function ConnectionsModule({
   view,
   newTask,
   openTask,
-}: Pick<ModuleContext, "s" | "view" | "newTask" | "openTask">) {
+  act,
+}: Pick<ModuleContext, "s" | "view" | "newTask" | "openTask" | "act">) {
   const id =
     view === "Browser"
       ? "browser"
@@ -47,6 +49,9 @@ export function ConnectionsModule({
           <ArrowUpRight size={17} />
         </button>
       </div>
+      {view === "Computer" && (
+        <ReasoningPanel s={s} act={act} openTask={openTask} />
+      )}
       {items.length ? (
         <div className="task-table">
           {items.map((t) => (

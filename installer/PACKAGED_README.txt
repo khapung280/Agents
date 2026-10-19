@@ -32,3 +32,12 @@ Playwright Chromium installation. External authenticated accounts are not
 configured. Live OpenAI vision processing remains a future approved step.
 
 Full documentation: resources\app\docs\WINDOWS_CONTROL.md
+
+GUIDED REASONING (OPTIONAL)
+Computer includes reviewed plan and screen sessions. Built-in local tools still
+need no API key. Live model calls require secure provider configuration and
+explicit approval. Every screen upload requires review of the exact capture;
+every proposed input requires separate approval. No model response alone can
+complete a session. Restart blocks checkpoints; interrupted input is not replayed.
+See docs/AI_BRAIN_PHASES.md in the source repository for configuration and limits.
+These AI workflows have been tested with offline fixtures, not a paid live model.

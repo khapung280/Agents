@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ReasoningSession, ScreenShareGrant } from "./reasoning.js";
 import {
   ComputerRequest,
   BrowserInteraction,
@@ -32,6 +33,7 @@ export const toolNames = [
   "workspace.write",
   "model.draft",
   "model.plan",
+  "model.vision",
   "computer.observe",
   "computer.launch",
   "computer.act",
@@ -88,6 +90,7 @@ export const agents: AgentDefinition[] = [
       "computer.launch",
       "computer.act",
       "computer.vision.prepare",
+      "model.vision",
     ],
     description:
       "Scoped workspace tools and opt-in Windows UI Automation. Native observation, approved input, and launch require an allowlisted application on a Windows host.",
@@ -181,6 +184,7 @@ export const requiresApproval = (tool: ToolName) =>
     "workspace.write",
     "model.draft",
     "model.plan",
+    "model.vision",
     "computer.observe",
     "computer.launch",
     "computer.act",
@@ -194,6 +198,7 @@ export const TaskInput = z.object({
   tool: z.enum(toolNames).optional(),
   projectId: z.string().max(100).default("personal"),
   computer: ComputerRequest.optional(),
+  visionGrantId: z.uuid().optional(),
   browser: BrowserInteraction.optional(),
   url: z.url().max(2048).optional(),
   text: z.string().max(50000).optional(),
@@ -283,6 +288,8 @@ export interface Policy {
   agents: Record<AgentId, boolean>;
 }
 export interface Snapshot {
+  reasoningSessions: ReasoningSession[];
+  screenGrants: ScreenShareGrant[];
   agents: AgentDefinition[];
   tasks: Task[];
   events: SystemEvent[];
@@ -291,6 +298,7 @@ export interface Snapshot {
   schedules: Schedule[];
   policy: Policy;
   provider: {
+    visionBudgetConfigured: boolean;
     configured: boolean;
     name: string | null;
     model: string | null;

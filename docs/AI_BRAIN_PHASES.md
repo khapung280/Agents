@@ -36,23 +36,30 @@ The local project plan and correspondence tools are explicitly deterministic sca
 - Only supplied text and same-project upstream textual evidence enter the request. Screen/vision artifacts and image bytes are excluded. A 32 KB context cap fails visibly; there is no silent truncation or paid summarization. Full context summarization remains pending.
 - Anthropic drafting remains supported with its own request/response contract; no live verification was performed.
 
-### Phases B/C: offline safeguards only
+### Phases B/C: approved screen reasoning and reviewed native execution — offline verified
 
-The vision builder now requests strict structured output and disables provider response storage. The local proposal validator binds the current observation, rejects expired/wrong IDs, invented/disabled/password targets, unexpected foreground state, missing required postconditions and already-satisfied postconditions. It never executes the proposal. The existing native adapter must independently revalidate live process identity, target geometry, focus, permissions and postconditions at actual dispatch.
+The owner explicitly approved the bounded session design below for implementation and offline testing. `model.vision` is now wired to the Responses adapter, but no live request was made. The guided Computer session:
 
-No screenshot transmission, screen interpretation, autonomous input or visual completion judgment is enabled. An image hash proves byte identity, not privacy. Existing masking does not establish that other private screen content is safe to share.
+1. Creates an allowlisted window observation task that still requires local capture approval.
+2. Shows the exact capture and UI Automation metadata. Sharing requires an unchecked-by-default sensitive-content acknowledgement and approval for one paid request.
+3. Binds the grant to the image SHA-256, observation ID, project, window/process/start time, model, individual model task and expiry. It is consumed once at dispatch. Altered, expired, revoked, mismatched or replayed grants fail before upload.
+4. Requests one strict typed model decision: action, blocked, needs observation, or a completion suggestion. Decisions use observed UIA IDs and the app's permitted action kinds. No coordinates, shell commands or provider-hosted computer tools are enabled.
+5. Requires owner approval of the exact action and postcondition. It executes once through the unchanged Windows adapter, which rechecks live identity, focus, content, geometry, target permission and independent postconditions.
+6. Reuses the action's fresh native capture for the next image-sharing review. A model saying “complete” cannot close a session: verified tool-task evidence and owner acceptance are both required.
+
+The offline vision preparation tool continues to send nothing. Actual screenshot transmission occurs only through the separately approved `model.vision` path. An image hash proves identity, not privacy: the owner must inspect image and metadata. Pixel masking is not a guarantee that all private content is removed. Screen sharing defaults to blocked until an owner-verified image token reservation is configured.
 
 ### Phase D: bounded planning through the existing ten-agent registry
 
-Typed model proposals can coordinate existing tools across all ten identities. A test executes a fixture-produced dependency plan through the real engine, including separate file approval and read-back verification. This is not a live reasoning acceptance test or a dynamic replanning loop.
+Typed model proposals can coordinate existing tools across all ten identities. A test executes a fixture-produced dependency plan through the real engine, including separate file approval and read-back verification. Persistent plan sessions now pause for paid-call approval, plan review, execution and final evidence acceptance. The owner can request up to two revised plans after reviewing failures. Screen and general planning modes remain separate; a model cannot silently switch modes or grant itself new capabilities. This is not live model acceptance.
 
 ### Phase E: existing face retained
 
-Real running `model.plan` maps to planning, observation tasks to observing, model drafts to thinking, and supervisor/output checks to verifying. Listening/speaking still depend on actual voice events. Approvals and emergency stop retain priority. Task details show actual provider-reported tokens and estimated cost even after a failed call. The mesh, dashboard layout and ten nodes are preserved.
+Real running `model.plan` maps to planning, observation tasks to observing, model drafts to thinking, and supervisor/output checks to verifying. Listening/speaking still depend on actual voice events. Approvals and emergency stop retain priority. Task details show actual provider-reported tokens and estimated cost even after a failed call. The mesh, dashboard layout and ten nodes are preserved. Computer now contains a guided-session panel with exact-image review, action approval, evidence review, cancel and reviewed recovery. All displayed state comes from persisted engine/session records.
 
-### Phase F: tested failure boundaries
+### Phase F: tested failure boundaries and persistent recovery
 
-Tests cover disallowed tools/URLs/paths, project injection, cycles/forward references, duplicate calls, refusal/truncation, invalid/oversized responses, invalid usage, lost responses, daily/per-workflow budgets, persistent accounting, emergency stop with late responses, and explicit execution approval. No claim of comprehensive prompt-injection prevention or independent penetration testing is made. Untrusted content cannot grant capabilities; the deterministic permission boundary is authoritative.
+Tests cover disallowed tools/URLs/paths, project injection, cycles/forward references, duplicate calls, refusal/truncation, invalid/oversized responses, invalid usage, lost responses, daily/per-workflow budgets, persistent accounting, emergency stop with late responses, and explicit execution approval. No claim of comprehensive prompt-injection prevention or independent penetration testing is made. Untrusted content cannot grant capabilities; the deterministic permission boundary is authoritative. Sessions allow one active session, eight native actions, eight paid calls (including uncertain calls), two reviewed recovery attempts and a five-minute total deadline. Per-session costs aggregate across its child workflows. Recovery requests a new plan or fresh observation rather than replaying input. Screen refresh recovery is limited to once every two seconds; action evidence captures remain mandatory. Restart blocks active checkpoints and invalidates pending image grants; emergency stop aborts tasks and preserves uncertain spending/input receipts.
 
 ## Configuration for a later approved live test
 
@@ -68,13 +75,17 @@ New optional settings in `.env.example`:
 | `AGENTS_DAILY_BUDGET_USD`  | 1       | UTC daily estimate cap, in addition to saved lifetime budget    |
 | `AGENTS_TASK_BUDGET_USD`   | 0.25    | Aggregate cap for paid child tasks in one workflow              |
 
+`AGENTS_VISION_INPUT_TOKEN_RESERVE` has **no default**. Before an explicitly authorized live vision test, verify an upper bound for image input tokens for the chosen model and permitted window dimensions, then configure that value (1024–262144). This allowance is added to text/schema input estimates and maximum output. Underestimating it can understate cost; it is not a substitute for account-level provider spending controls. No value or pricing was guessed in the owner environment.
+
+For guided sessions, open **Computer → Guided reasoning sessions**. Plan mode uses the existing ten-agent registry; screen mode requires an open allowlisted application on Windows. Open the current task to review capture or planning approval. Image sharing and each native action have separate review buttons. The five-minute limit includes time waiting for approvals; expired work must be reviewed and restarted. No API key is required for existing deterministic local tools.
+
 In the dashboard, choose Project Manager → `model.plan`, provide a goal and approved source text, then review the paid-call approval. Review the returned workflow before choosing **Execute reviewed plan**. Protected child actions require their own approval. This interface is prepared for a separately authorized small-budget live test; it was not used to spend money during development.
 
 Usage estimates appear in task progress, and confirmed tokens/cost appear in task details. Unknown reservations are deliberately not cleared by retry or restart. They currently require local billing reconciliation before an operator changes accounting; there is no unsafe automatic reservation-reset button.
 
-## Proposed next architecture — requires owner approval before implementation
+## Approved bounded session architecture
 
-The owner requested approval before significant architecture changes. The following bounded session design is concrete enough to review; it is not implemented or enabled:
+The owner approved this design in chat for implementation and offline tests. Its bounded session, grant, execution, verification and restart controls are now implemented. That approval did not authorize paid API testing or actions on the owner’s laptop:
 
 1. Add a persistent `ReasoningSession` record: objective, project, dependency workflow IDs, verified evidence IDs, pending proposal, step/call counters, spend, deadline and checkpoint state. It wraps the existing Engine, rather than replacing it.
 2. Add explicit `ScreenShareGrant` records tied to one task, one window/process identity, one image SHA-256 and expiry. Show the exact window capture before each external transfer. No full-desktop capture, ambient background vision or implicit grant from “allow application.” Secret/payment/private windows require explicit owner authorization and must otherwise be blocked. Do not promise pixel classification can reliably remove all private content.
@@ -84,7 +95,7 @@ The owner requested approval before significant architecture changes. The follow
 6. On restart, block active sessions for review and invalidate screenshot/input grants. Emergency stop aborts the session, native worker and provider signal. Preserve uncertain spend and input receipts. No automatic resume.
 7. Emit real session events into the existing dashboard. Store decisions and evidence references; do not request or display hidden chain-of-thought. Model summaries explain next actions without claiming facts beyond tool evidence.
 
-The next change would add these records and tools within the existing Node/SQLite/Windows design, with no new orchestration framework, administrator privilege, paid SDK dependency or dashboard redesign. Approval of this design would authorize implementation and offline tests only, not paid API use or desktop input on the owner's machine.
+These records and tools use the existing Node/SQLite/Windows design. No new orchestration framework, administrator privilege, paid SDK dependency or dashboard redesign was introduced. Automatic multi-agent-to-screen handoffs, broad capability grants and an arbitrary repository execution sandbox remain outside this bounded implementation.
 
 ## Acceptance workflow status
 
@@ -95,7 +106,7 @@ The next change would add these records and tools within the existing Node/SQLit
 | C: Fix sample repository            | Existing TypeScript syntax review and scoped exclusive write                                       | Isolated repository runner, patch approval, command allowlist and real tests; no arbitrary shell added |
 | D: Research/business/project/report | Real local DAG coordination and fixture-generated reviewed-plan execution                          | Live model planning and evidence-based report quality                                                  |
 
-Phase G installer preparation can package this code using the existing Windows workflow; native code is unchanged. A successful build is not acceptance of the new AI workflows. End-to-end autonomy remains incomplete until approved live provider tests and real Windows workflow tests pass.
+Phase G uses the existing Windows packaging workflow; native input and PowerShell code remain unchanged. A successful build is not acceptance of the new AI workflows. End-to-end autonomy remains incomplete until approved live provider tests and real Windows workflow tests pass.
 
 ## Official API references
 
@@ -103,10 +114,10 @@ Request fields were checked against the current official [OpenAI Responses SDK r
 
 ## Cloud validation of this implementation
 
-- `npm run check`: 61 backend/security tests passed, plus type checking, lint and production build. Provider fixture tests use no live API access.
-- `npm run test:e2e`: 12 browser journeys passed, including the real dashboard, all ten nodes, approvals, navigation and local tool workflows.
+- `npm run check`: 71 backend/security tests passed, plus type checking, lint and production build. Provider fixture tests use no live API access.
+- `npm run test:e2e`: 14 browser journeys passed, including the real dashboard, all ten nodes, approvals, navigation and local tool workflows.
 - `npm run test:desktop`: Linux/Xvfb Electron smoke passed: private-service pairing, real workflow completion, single-instance behavior, renderer isolation and shutdown.
 - `npm run test:windows`: correctly reported NOT RUN on Linux and exited nonzero. The owner's earlier fixture PASS is separate evidence.
-- Focused provider tests were rerun after tightening the final function-call completion-status check.
+- Focused provider tests were rerun after tightening the final function-call completion-status check. Ten session tests cover image and action approvals, tampering, missing vision budget, invalid targets, unsupported completion claims, deadlines/caps, stop/restart, task-bound grants, failed native postconditions and spending reservations. The two new browser journeys exercise actual HTTP/WebSocket/engine/local-tool flow: one reviews and executes a model plan; the other verifies image consent resets for every fresh capture and requires separate action approval. External model and native transport boundaries are explicitly simulated in the screen journey; no real Windows or paid API claim follows.
 
-No native Windows input code, PowerShell policy, dependencies, lockfile, private credentials, unrelated repository or external deployment was changed. The screenshot proposal helper remains offline. Successful tests do not establish live model quality or general autonomous desktop acceptance.
+No native Windows input code, PowerShell policy, dependencies, lockfile, private credentials, unrelated repository or external deployment was changed. The screenshot proposal helper remains offline; the new approved model.vision path has only been exercised with intercepted provider responses. Successful tests do not establish live model quality or general autonomous desktop acceptance.

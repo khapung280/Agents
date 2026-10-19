@@ -113,7 +113,7 @@ Live vision/model planning is intentionally not enabled here. Before adding tran
 
 ## Remaining work
 
-Interactive execution on actual Windows (native compilation has passed in Windows CI); the acceptance matrix above; broader app/provider coverage; persistent browser sessions and account-specific external actions; live OpenAI vision transport with reviewed spending; signed packaging and independent security review. Free-form autonomous reasoning is not implemented by the deterministic local tools. Owner-defined DAGs execute and verify through the existing orchestrator, but computer inputs remain individually approved.
+The owner reports a PASS for the controlled Windows fixture. Remaining work includes the broader application acceptance matrix above, live provider/vision acceptance, persistent browser sessions and account-specific external actions, signed packaging and independent security review. Deterministic local tools do not provide free-form reasoning. The Responses planner and reviewed vision session transport are now implemented and offline-tested; no paid live test has been performed. See [AI brain phases](AI_BRAIN_PHASES.md). Owner-defined DAGs execute and verify through the existing orchestrator, but computer inputs remain individually approved.
 
 ## Worker lifecycle reliability update
 
@@ -136,3 +136,7 @@ A reproduced communication bug allowed a launched descendant to retain stdout/st
 If validation fails, share `validation.log` and `validation-result.json` from the printed directory, plus the installer build used. Review filenames and personal paths before sharing; do not send API keys or the whole runtime database. Screenshots can be reviewed locally for masking. Do not enable normal-application control until this fixture test passes on the device.
 
 CI runs `--watchdog-self-test` through the packaged runtime. Its expected FAIL for a deliberately stalled child is followed by **PASS: watchdog self-test only**; this mode performs no native UI actions and is not a Windows control result.
+
+## Guided screen sessions
+
+Computer now includes guided reasoning sessions. Capture approval, exact-image sharing approval, each proposed input, and final evidence acceptance remain separate. A session uses the same native adapter and never bypasses its live focus/content/geometry checks. See [the session controls and current verification limits](AI_BRAIN_PHASES.md). The existing `computer.vision.prepare` tool remains offline; only `model.vision` can make an explicitly approved provider request. Screen sharing remains unavailable until compatible model configuration, verified prices, and an image token reservation are provided securely.

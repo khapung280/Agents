@@ -15,6 +15,7 @@ import {
 } from "../shared/contracts.js";
 import { Store } from "./store.js";
 import { Engine } from "./engine.js";
+import type { WindowsComputer } from "./computer/windows.js";
 
 export function createApp(options: {
   directory: string;
@@ -23,6 +24,7 @@ export function createApp(options: {
   browserPath?: string;
   browserNoSandbox?: boolean;
   runner?: ConstructorParameters<typeof Engine>[1]["runner"];
+  computerFactory?: (store: Store) => WindowsComputer;
 }) {
   const store = new Store(options.directory);
   const engine = new Engine(store, {
@@ -30,6 +32,7 @@ export function createApp(options: {
     browserPath: options.browserPath,
     browserNoSandbox: options.browserNoSandbox,
     runner: options.runner,
+    computer: options.computerFactory?.(store),
   });
   const tokenFile = join(options.directory, "pairing-token");
   const pairingToken =
@@ -114,6 +117,41 @@ export function createApp(options: {
     next();
   });
   app.get("/api/state", (_req, res) => res.json(engine.snapshot()));
+  app.post("/api/reasoning-sessions", (req, res) =>
+    res.status(201).json(engine.reasoning.create(req.body)),
+  );
+  app.post("/api/reasoning-sessions/:id/execute-plan", (req, res) =>
+    res.json(engine.reasoning.executePlan(req.params.id)),
+  );
+  app.post("/api/reasoning-sessions/:id/share", (req, res) => {
+    const input = z
+      .object({
+        imageSha256: z.string().regex(/^[a-f0-9]{64}$/),
+        sensitiveContentApproved: z.literal(true),
+      })
+      .strict()
+      .parse(req.body);
+    res.json(
+      engine.reasoning.approveShare(
+        req.params.id,
+        input.imageSha256,
+        input.sensitiveContentApproved,
+      ),
+    );
+  });
+  app.post("/api/reasoning-sessions/:id/act", (req, res) => {
+    const input = z.object({ proposalId: z.uuid() }).strict().parse(req.body);
+    res.json(engine.reasoning.approveAction(req.params.id, input.proposalId));
+  });
+  app.post("/api/reasoning-sessions/:id/confirm", (req, res) =>
+    res.json(engine.reasoning.confirm(req.params.id)),
+  );
+  app.post("/api/reasoning-sessions/:id/recover", (req, res) =>
+    res.json(engine.reasoning.recover(req.params.id)),
+  );
+  app.post("/api/reasoning-sessions/:id/cancel", (req, res) =>
+    res.json(engine.reasoning.cancel(req.params.id)),
+  );
   app.post("/api/logout", (req, res) => {
     const id = req.headers.cookie
       ?.split(";")

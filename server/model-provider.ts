@@ -3,6 +3,14 @@ import { z } from "zod";
 import { agents, type Task, type Usage } from "../shared/contracts.js";
 import type { ToolContext } from "./tools.js";
 import { redact } from "./security.js";
+import type {
+  ReasoningSession,
+  ScreenShareGrant,
+} from "../shared/reasoning.js";
+import {
+  approvedScreenInput,
+  validateScreenDecision,
+} from "./screen-sharing.js";
 import {
   planFunction,
   planningTools,
@@ -10,6 +18,10 @@ import {
 } from "./model-plan.js";
 
 export const providerInfo = () => ({
+  visionBudgetConfigured:
+    Number.isInteger(Number(process.env.AGENTS_VISION_INPUT_TOKEN_RESERVE)) &&
+    Number(process.env.AGENTS_VISION_INPUT_TOKEN_RESERVE) >= 1024 &&
+    Number(process.env.AGENTS_VISION_INPUT_TOKEN_RESERVE) <= 262144,
   configured: !!(
     (process.env.AGENTS_MODEL_PROVIDER === "openai" &&
       (process.env.AGENTS_OPENAI_API_KEY || process.env.OPENAI_API_KEY)) ||
@@ -109,7 +121,7 @@ async function boundedJson(response: Response) {
 export async function requestModel(task: Task, ctx: ToolContext) {
   if (
     task.approval !== "consumed" ||
-    !["model.plan", "model.draft"].includes(task.tool)
+    !["model.plan", "model.draft", "model.vision"].includes(task.tool)
   )
     throw new Error(
       "A consumed task-scoped approval is required for this model call.",
@@ -137,6 +149,23 @@ export async function requestModel(task: Task, ctx: ToolContext) {
   );
   const limits = modelLimits();
   const planning = task.tool === "model.plan";
+  if (task.tool === "model.vision" && info.name !== "openai")
+    throw new Error(
+      "Screen reasoning requires the configured OpenAI Responses provider.",
+    );
+  const vision =
+    task.tool === "model.vision"
+      ? await approvedScreenInput(task, ctx, info.model)
+      : undefined;
+  const imageTokens = vision
+    ? numberSetting(
+        "AGENTS_VISION_INPUT_TOKEN_RESERVE",
+        NaN,
+        1024,
+        262144,
+        true,
+      )
+    : 0;
   const effort = process.env.AGENTS_REASONING_EFFORT;
   if (
     effort &&
@@ -181,8 +210,13 @@ export async function requestModel(task: Task, ctx: ToolContext) {
     throw new Error(
       "Model context exceeds 32000 bytes. Select a smaller evidence set; no context was silently omitted.",
     );
-  const body =
-    info.name === "openai"
+  const body = vision
+    ? {
+        ...vision.request,
+        max_output_tokens: limits.maxOutput,
+        ...(effort ? { reasoning: { effort } } : {}),
+      }
+    : info.name === "openai"
       ? {
           model: info.model,
           store: false,
@@ -209,21 +243,45 @@ export async function requestModel(task: Task, ctx: ToolContext) {
           max_tokens: limits.maxOutput,
         };
   const serialized = JSON.stringify(body);
+  for (const key of [
+    process.env.AGENTS_OPENAI_API_KEY,
+    process.env.OPENAI_API_KEY,
+    process.env.ANTHROPIC_API_KEY,
+  ])
+    if (key && serialized.includes(key))
+      throw new Error(
+        "Request would include a configured credential in model context; external processing was refused.",
+      );
+  const costInput = vision
+    ? JSON.stringify(body, (key, value) =>
+        key === "image_url" ? "[approved image]" : value,
+      )
+    : serialized;
   // Reserve all instruction, schema and context bytes, plus protocol overhead.
   // Standard text-token price estimates intentionally do not assume cache discounts.
   const reserve =
-    ((Buffer.byteLength(serialized) + 4096) * inputPrice +
+    ((Buffer.byteLength(costInput) + 4096 + imageTokens) * inputPrice +
       limits.maxOutput * outputPrice) /
     1e6;
   ctx.progress(
     `Model call estimate: reserve up to $${reserve.toFixed(6)} using configured token rates; actual usage will be recorded.`,
   );
   const now = new Date().toISOString();
-  const workflowId = task.parentId ?? task.id;
+  const session = ctx.store
+    .list<ReasoningSession>("reasoning_session")
+    .find((s) => s.taskIds.includes(task.parentId ?? task.id));
+  const workflowId = session?.id ?? task.parentId ?? task.id;
   ctx.signal.throwIfAborted();
   ctx.store.transaction(() => {
     if (ctx.store.policy().stopped || !ctx.store.policy().agents[task.agent])
       throw new Error("Model execution is stopped or the agent is paused.");
+    if (
+      session &&
+      (["blocked", "cancelled", "completed"].includes(session.state) ||
+        session.currentTaskId !== task.parentId ||
+        Date.parse(session.deadline) <= Date.now())
+    )
+      throw new Error("Reasoning session is not active for this task.");
     if (
       ctx.store.get("model_reservation", task.id) ||
       ctx.store.get("model_charge", task.id)
@@ -250,6 +308,13 @@ export async function requestModel(task: Task, ctx: ToolContext) {
       workflowId?: string;
     }>("model_reservation");
     const pending = reservations.reduce((sum, r) => sum + r.amount, 0);
+    if (
+      session &&
+      charges.filter((c) => c.workflowId === session.id).length +
+        reservations.filter((r) => r.workflowId === session.id).length >=
+        8
+    )
+      throw new Error("Reasoning session model-call limit reached.");
     const spent =
       charges.reduce((sum, c) => sum + (c.usage.estimatedCost ?? 0), 0) +
       historical.reduce((sum, t) => sum + (t.usage!.estimatedCost ?? 0), 0);
@@ -295,11 +360,29 @@ export async function requestModel(task: Task, ctx: ToolContext) {
       workflowId,
       at: now,
     });
+    if (vision) {
+      const grant = ctx.store.get<ScreenShareGrant>(
+        "screen_grant",
+        vision.grant.id,
+      );
+      if (
+        !grant ||
+        grant.state !== "approved" ||
+        grant.taskId !== task.id ||
+        Date.parse(grant.expiresAt) <= Date.now()
+      )
+        throw new Error(
+          "Screen approval expired or was revoked before dispatch.",
+        );
+      ctx.store.put("screen_grant", grant.id, { ...grant, state: "consumed" });
+    }
   });
   ctx.progress(
     planning
       ? "Planning: requesting one structured workflow proposal"
-      : "Thinking: requesting one model draft",
+      : vision
+        ? "Observing: requesting one decision for the explicitly approved window image"
+        : "Thinking: requesting one model draft",
   );
   const dispatcher =
     process.env.HTTPS_PROXY || process.env.HTTP_PROXY
@@ -473,5 +556,29 @@ export async function requestModel(task: Task, ctx: ToolContext) {
       );
     }
   }
-  return { plan, content: redact(content), usage };
+  let decision;
+  if (vision) {
+    try {
+      decision = validateScreenDecision(
+        JSON.parse(content),
+        vision.observation,
+      );
+      if (
+        decision.action &&
+        !ctx
+          .computer!.policy.apps.find(
+            (app) => app.id === vision.observation.app,
+          )
+          ?.actions.includes(decision.action.kind)
+      )
+        throw new Error(
+          "Vision action is outside the application permission policy.",
+        );
+    } catch {
+      throw new Error(
+        "Vision response failed observation, action or postcondition validation; no input was executed.",
+      );
+    }
+  }
+  return { plan, decision, content: redact(content), usage };
 }

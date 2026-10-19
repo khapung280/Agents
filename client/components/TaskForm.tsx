@@ -170,9 +170,11 @@ export function TaskForm({
               value={tool}
               onChange={(e) => setTool(e.target.value as ToolName)}
             >
-              {description.tools.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
+              {description.tools
+                .filter((t) => t !== "model.vision")
+                .map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
             </select>
           </label>
         </div>

@@ -108,6 +108,7 @@ export function Modules({
       <ConnectionsModule
         s={s}
         view={view}
+        act={act}
         newTask={newTask}
         openTask={openTask}
       />

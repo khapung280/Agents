@@ -182,13 +182,17 @@ async function modelDraft(task: Task, ctx: ToolContext): Promise<ToolResult> {
   const result = await requestModel(task, ctx);
   return {
     artifacts: [
-      result.plan
-        ? jsonArtifact("Proposed workflow", result.plan)
-        : textArtifact("Model draft", result.content),
+      result.decision
+        ? jsonArtifact("Vision decision", result.decision)
+        : result.plan
+          ? jsonArtifact("Proposed workflow", result.plan)
+          : textArtifact("Model draft", result.content),
     ],
-    verification: result.plan
-      ? "Provider returned a validated workflow proposal and token usage. Owner review is required before execution; no proposed actions occurred."
-      : "Provider returned a draft and token usage. Factual claims require human review.",
+    verification: result.decision
+      ? "Provider returned a typed decision for the approved image. No input occurred; any completion suggestion requires evidence and owner review."
+      : result.plan
+        ? "Provider returned a validated workflow proposal and token usage. Owner review is required before execution; no proposed actions occurred."
+        : "Provider returned a draft and token usage. Factual claims require human review.",
     usage: result.usage,
   };
 }
@@ -535,6 +539,7 @@ export async function executeTool(
     }
     case "model.draft":
     case "model.plan":
+    case "model.vision":
       return modelDraft(task, ctx);
   }
 }

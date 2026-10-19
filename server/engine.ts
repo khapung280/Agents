@@ -22,6 +22,7 @@ import {
 } from "./tools.js";
 import { WindowsComputer } from "./computer/windows.js";
 import { redact } from "./security.js";
+import { ReasoningSessions } from "./reasoning-sessions.js";
 
 const terminal = (t: Task) =>
   ["completed", "failed", "cancelled"].includes(t.state);
@@ -39,6 +40,7 @@ const defaultTool: Record<TaskRequest["agent"], ToolName> = {
 };
 export class Engine extends EventEmitter {
   readonly computer: WindowsComputer;
+  readonly reasoning: ReasoningSessions;
   active = new Map<string, AbortController>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private ticking = false;
@@ -72,6 +74,7 @@ export class Engine extends EventEmitter {
         store.put("task", task.id, task);
         store.event("task.blocked", task.error, task);
       }
+    this.reasoning = new ReasoningSessions(this);
   }
   start() {
     this.timer = setInterval(() => void this.tick(), 300);
@@ -79,9 +82,13 @@ export class Engine extends EventEmitter {
   }
   async close() {
     this.closed = true;
+    this.reasoning.stopAll(
+      "Service closed. Review the checkpoint before recovery; nothing will replay.",
+    );
     if (this.timer) clearInterval(this.timer);
     for (const c of this.active.values()) c.abort();
-    while (this.active.size) await new Promise((r) => setTimeout(r, 10));
+    while (this.active.size || this.ticking)
+      await new Promise((r) => setTimeout(r, 10));
   }
   changed() {
     this.emit("change");
@@ -94,6 +101,10 @@ export class Engine extends EventEmitter {
     this.store.put("task", task.id, task);
   }
   private validateComputer(input: TaskRequest, tool: ToolName) {
+    if (tool === "model.vision" && !input.visionGrantId)
+      throw new Error(
+        "Start a guided screen session and review the exact image before requesting vision.",
+      );
     if (tool === "browser.interact" && (!input.browser || !input.url))
       throw new Error(
         "Browser interaction requires a URL, action, and postcondition.",
@@ -381,6 +392,7 @@ export class Engine extends EventEmitter {
       ...this.store.policy(),
       stopped: true,
     });
+    this.reasoning.stopAll("Emergency stop", true);
     for (const t of this.store.tasks()) if (!terminal(t)) this.cancel(t.id);
     this.event(
       "system.stopped",
@@ -403,6 +415,8 @@ export class Engine extends EventEmitter {
     try {
       const policy = this.store.policy();
       if (policy.stopped) return;
+      await this.reasoning.tick();
+      if (this.closed || this.store.policy().stopped) return;
       if (policy.mode === "autonomous")
         for (const schedule of this.store.schedules()) {
           if (schedule.paused || Date.parse(schedule.nextRun) > Date.now())
@@ -641,6 +655,13 @@ export class Engine extends EventEmitter {
       .filter((t) => !t.workflow && t.usage)
       .map((t) => t.usage!);
     return {
+      reasoningSessions: this.reasoning.list().slice(0, 20),
+      screenGrants: this.reasoning.grants().filter((g) =>
+        this.reasoning
+          .list()
+          .slice(0, 20)
+          .some((s) => s.grantId === g.id),
+      ),
       agents,
       tasks: all.slice(0, 300),
       events: this.store.events(),

@@ -1,0 +1,7 @@
+{
+  "agent": "project",
+  "tool": "model.plan",
+  "projectId": "personal",
+  "objective": "Propose exactly two local steps for a fictional project. First use Business Agent business.brief with customers=2, price=3, expenses=1. Then use Communication Agent communication.draft, depending on the first step, to summarize its arithmetic and label it a fictional test. Use no other tools. Do not execute the plan. Do not browse, read or write files, access memory, use screenshots, send messages, or request another model call.",
+  "text": "Acceptance inputs: 2 customers, USD 3 per customer, USD 1 total expense. Expected revenue USD 6 and profit USD 5. Use null for unused plan fields. This is a synthetic integration test, not a business forecast."
+}

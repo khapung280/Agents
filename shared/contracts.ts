@@ -57,6 +57,8 @@ export type CoreState =
   | "idle"
   | "listening"
   | "thinking"
+  | "observing"
+  | "verifying"
   | "planning"
   | "delegating"
   | "executing"
@@ -215,6 +217,8 @@ export interface Usage {
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number | null;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
 }
 export interface Task {
   workflow: boolean;

@@ -22,6 +22,7 @@ import { executeTool } from "../server/tools.js";
 import {
   prepareVision,
   buildOpenAIVisionRequest,
+  validateVisionProposal,
 } from "../server/computer/vision.js";
 import { deriveCoreState } from "../client/coreState.js";
 
@@ -258,7 +259,7 @@ test("native approval, actual boundary evidence, serialization, and live face st
         listening: false,
         speaking: false,
       }),
-      "executing",
+      "observing",
     );
     release();
     await until(() =>
@@ -685,6 +686,101 @@ test("malformed screenshot or mismatched process evidence cannot produce a succe
       ),
       /does not match/,
     );
+  } finally {
+    await env.close();
+  }
+});
+
+test("offline vision proposals reject stale, invented, password and already-satisfied targets", async () => {
+  const env = await setup();
+  try {
+    const observation = await observe(env);
+    const proposal = {
+      observationId: observation.id,
+      explanation: "Set the visible note field",
+      action: { kind: "setText", elementId: "1.1", text: "A reviewed note" },
+      expect: null,
+    };
+    assert.equal(validateVisionProposal(proposal, observation).kind, "act");
+    assert.throws(
+      () =>
+        validateVisionProposal(
+          proposal,
+          observation,
+          Date.parse(observation.expiresAt),
+        ),
+      /fresh observation/,
+    );
+    assert.throws(
+      () =>
+        validateVisionProposal(
+          {
+            ...proposal,
+            observationId: "00000000-0000-4000-8000-000000000000",
+          },
+          observation,
+        ),
+      /fresh observation/,
+    );
+    assert.throws(
+      () =>
+        validateVisionProposal(
+          { ...proposal, action: { kind: "click", elementId: "invented" } },
+          observation,
+        ),
+      /non-password element/,
+    );
+    assert.throws(
+      () =>
+        validateVisionProposal(
+          { ...proposal, action: { kind: "click", elementId: "1.1" } },
+          observation,
+        ),
+      /postcondition/,
+    );
+    const hidden = {
+      ...observation,
+      window: { ...observation.window, foreground: false },
+    };
+    assert.throws(() => validateVisionProposal(proposal, hidden), /focus/);
+    const password = {
+      ...observation,
+      window: {
+        ...observation.window,
+        elements: observation.window.elements.map((e) => ({
+          ...e,
+          password: true,
+        })),
+      },
+    };
+    assert.throws(
+      () => validateVisionProposal(proposal, password),
+      /non-password element/,
+    );
+    const element = observation.window.elements.find((e) => e.id === "1.1")!;
+    assert.throws(
+      () =>
+        validateVisionProposal(
+          {
+            ...proposal,
+            expect: {
+              elementId: "1.1",
+              property: "value",
+              equals: element.value ?? "",
+            },
+          },
+          observation,
+        ),
+      /already holds/,
+    );
+    const request = buildOpenAIVisionRequest(
+      "fixture-model",
+      prepareVision(observation, "Review note", png),
+      png,
+    );
+    assert.equal(request.store, false);
+    assert.equal(request.text.format.strict, true);
+    assert.equal(env.calls(), 1); // Only the original local observation, no proposed input.
   } finally {
     await env.close();
   }

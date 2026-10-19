@@ -41,6 +41,24 @@ export function TaskDetail({
         </span>
       </div>
       {task.error && <div className="notice error">{task.error}</div>}
+      {[task, ...children]
+        .filter((t) => !t.workflow && t.usage)
+        .map((t) => (
+          <div className="notice" key={`usage-${t.id}`}>
+            {t.usage!.model}: {t.usage!.inputTokens} input /{" "}
+            {t.usage!.outputTokens} output tokens
+            {t.usage!.reasoningTokens
+              ? ` (${t.usage!.reasoningTokens} reasoning tokens included in output)`
+              : ""}
+            .
+            {t.usage!.estimatedCost !== null
+              ? ` Estimated cost $${t.usage!.estimatedCost.toFixed(6)} using configured rates.`
+              : " Cost unavailable."}
+            {t.state !== "completed"
+              ? " Usage is retained even though this task did not complete."
+              : ""}
+          </div>
+        ))}
       {[task, ...children].some(
         (t) =>
           t.tool.startsWith("computer.") &&

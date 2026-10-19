@@ -601,6 +601,7 @@ export class Engine extends EventEmitter {
     } catch (e) {
       const fresh = this.store.get<Task>("task", task.id)!;
       if (fresh.state !== "running") return;
+      task.usage = fresh.usage;
       const message = redact(
         e instanceof Error ? e.message : "Tool execution failed",
       );

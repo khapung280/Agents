@@ -2,11 +2,11 @@
 
 **AGENTS OS** is a local-first command center with a real animated Three.js intelligence, ten specialized agent identities, durable workflows, scoped tools, approvals, and observable execution.
 
-This repository is a working foundation, not a completed general-purpose autonomous computer operator. Built-in workflows run without a model. OpenAI is the selected optional provider; live API calls need configuration. The Windows control adapter is implemented but has not been validated on Windows. Connected email sending, live voice/language validation, general sandboxed coding, and production deployment remain incomplete. See [verification and phase status](docs/VERIFICATION.md).
+This repository is a working foundation, not a completed general-purpose autonomous computer operator. Built-in workflows run without a model. OpenAI is the selected optional provider; live API calls need configuration. The owner reports that the controlled Windows validation fixture passed on their Windows 11 laptop; general desktop automation remains unverified. Connected email sending, live voice/language validation, general sandboxed coding, and production deployment remain incomplete. See [verification and phase status](docs/VERIFICATION.md).
 
 ## Windows desktop installation
 
-A per-user Windows x64 installer and desktop shortcut are now supported. See [installation and native test steps](docs/WINDOWS_INSTALL.md). The package includes its runtime; no VS Code, Node installation, or API key is needed for built-in workflows. The installer can be cross-compiled in Linux; that does **not** verify Windows execution. Real-device acceptance remains pending.
+A per-user Windows x64 installer and desktop shortcut are now supported. See [installation and native test steps](docs/WINDOWS_INSTALL.md). The package includes its runtime; no VS Code, Node installation, or API key is needed for built-in workflows. The installer can be cross-compiled in Linux; that does **not** verify Windows execution. Real-device acceptance of general AI-driven workflows remains pending.
 
 ## Start locally
 
@@ -54,6 +54,8 @@ The Computer Agent now has opt-in UI Automation, window capture, approved mouse/
 Read [Windows setup and native validation](docs/WINDOWS_CONTROL.md). `npm run test:windows` targets only a disposable Windows fixture and needs no API key. The offline vision builder sends nothing to OpenAI. Keep cloud environment configuration pending until Windows testing is reviewed.
 
 ## Model configuration
+
+The OpenAI adapter now uses the Responses API with strict typed workflow proposals, bounded requests, and persistent cost accounting. See the [AI brain audit, phase status and proposed next architecture](docs/AI_BRAIN_PHASES.md). Live model and vision-guided acceptance remain pending.
 
 Copy `.env.example` to `.env` and configure it locally. Never commit `.env`.
 

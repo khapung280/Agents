@@ -16,6 +16,8 @@ const palette: Record<CoreState, string> = {
   offline: "#354b60",
   listening: "#71f5df",
   thinking: "#b79aff",
+  observing: "#5addcf",
+  verifying: "#b2d69b",
   planning: "#8f9cff",
   delegating: "#8ab9ff",
   executing: "#48d7ed",
@@ -192,9 +194,14 @@ function Face({
   );
   useFrame((s, delta) => {
     const t = s.clock.elapsedTime;
-    const active = ["thinking", "planning", "delegating", "executing"].includes(
-      state,
-    );
+    const active = [
+      "thinking",
+      "planning",
+      "delegating",
+      "executing",
+      "observing",
+      "verifying",
+    ].includes(state);
     uniforms.uColor.value.lerp(
       new THREE.Color(palette[state]),
       Math.min(1, delta * 4),

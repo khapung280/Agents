@@ -11,13 +11,26 @@ export function deriveCoreState(
   if (voice.listening) return "listening";
   if (voice.speaking) return "speaking";
   if (s.metrics.approvals) return "approval";
-  if (s.metrics.active)
-    return s.tasks.some(
-      (t) =>
-        !t.workflow && t.state === "running" && t.tool.startsWith("model."),
+  const running = s.tasks.filter((t) => !t.workflow && t.state === "running");
+  if (running.length) {
+    const progress = s.events.find(
+      (e) =>
+        e.type === "task.progress" && running.some((t) => t.id === e.taskId),
+    );
+    if (progress?.message.startsWith("Verifying:")) return "verifying";
+    if (running.some((t) => t.tool === "model.plan")) return "planning";
+    if (running.some((t) => t.tool.startsWith("model."))) return "thinking";
+    if (
+      running.some(
+        (t) =>
+          t.tool === "computer.observe" || t.tool === "computer.vision.prepare",
+      )
     )
-      ? "thinking"
-      : "executing";
+      return "observing";
+    if (running.every((t) => t.tool === "supervisor.verify"))
+      return "verifying";
+    return "executing";
+  }
   if (
     s.events[0]?.type === "workflow.delegated" &&
     now - Date.parse(s.events[0].at) < 1200

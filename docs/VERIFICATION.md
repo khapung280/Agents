@@ -2,6 +2,12 @@
 
 This is a functioning local-first foundation for **ULTIMATE AGENTS — BOTH**. It does not meet the entire production-grade, general-purpose autonomous Windows/business-system definition of done yet. Unconnected integrations are not counted as working.
 
+## Current AI phase update
+
+See [the detailed AI brain audit and phase evidence](AI_BRAIN_PHASES.md). The owner reports the Windows disposable fixture passed on their laptop; this is not an independently observed general-desktop or model-guided acceptance result. The new Responses integration is tested using intercepted provider responses only. No paid API requests or screen uploads were made.
+
+The historical milestone table below describes the foundation; the linked phase report distinguishes current changes and remaining work.
+
 ## Completed architecture milestones
 
 | Phase                     | Delivered and checked                                                                                                                                                                 | Outstanding                                                                                                                                     |
@@ -18,9 +24,9 @@ This is a functioning local-first foundation for **ULTIMATE AGENTS — BOTH**. I
 
 ## Test evidence
 
-- `npm run check`: TypeScript and ESLint pass; all **47 backend/integration/security/packaging tests** pass; production client/server build passes.
+- `npm run check`: TypeScript and ESLint pass; all **61 backend/integration/security/packaging tests** pass; production client/server build passes.
 - `npm run test:e2e`: **12 browser journeys** cover rendering and viewport geometry, every navigation destination, real workflow execution and retained history, memory correction/deletion, approval enforcement, emergency stop, policy settings, deterministic browser navigation, coordinated multi-agent work, project/schedule controls, typed Computer controls, and verified Playwright fill/click/key interactions with rejection tests.
-- `npm run test:windows`: **NOT RUN on Windows**. Invoking it on Linux exits nonzero with the platform requirement. Native C#/PowerShell compilation passed on Windows CI; interactive PC control remains unverified.
+- `npm run test:windows`: **owner-reported PASS on Windows 11 for the controlled fixture**. Not independently run on a real device by this cloud agent. Invoking it on Linux exits nonzero with the platform requirement. Native C#/PowerShell compilation passed on Windows CI; broader applications and model-guided input remain unverified.
 - `npm run test:desktop`: Electron **44.7.2** launches, pairs to its private service, renders the core, exposes no renderer `require`, and completes a real project workflow plus supervisor verification. Repeated launch reuses the existing instance, and closing Electron stops its service. Tested on Linux/Xvfb in the isolated cloud container. This is not a Windows validation result. Test-mode Chromium sandbox disabling is explicitly isolated to this environment.
 - `bash scripts/cloud-install.sh`: frozen-lockfile installation, explicit Electron binary setup with checksum verification, build and backend tests executed successfully. Dependencies are reusable; the Electron 44 binary download uses Node's supported environment proxy.
 - Development mode: Vite middleware page renders with no JavaScript page errors.

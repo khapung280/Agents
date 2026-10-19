@@ -29,6 +29,9 @@ export const ModelPlan = z
             url: z.string().max(2048).nullable(),
             text: z.string().max(12000).nullable(),
             path: z.string().max(240).nullable(),
+            customers: z.number().int().min(0).max(10000000).nullable(),
+            price: z.number().min(0).max(10000000).nullable(),
+            expenses: z.number().min(0).max(1000000000).nullable(),
           })
           .strict(),
       )
@@ -114,7 +117,19 @@ export function validateModelPlan(
   return WorkflowInput.parse({
     objective: proposal.objective,
     steps: proposal.steps.map(
-      ({ key, after, agent, tool, objective, url, text, path }) => ({
+      ({
+        key,
+        after,
+        agent,
+        tool,
+        objective,
+        url,
+        text,
+        path,
+        customers,
+        price,
+        expenses,
+      }) => ({
         key,
         after,
         request: {
@@ -125,6 +140,9 @@ export function validateModelPlan(
           ...(url === null ? {} : { url }),
           ...(text === null ? {} : { text }),
           ...(path === null ? {} : { path }),
+          ...(customers === null ? {} : { customers }),
+          ...(price === null ? {} : { price }),
+          ...(expenses === null ? {} : { expenses }),
         },
       }),
     ),

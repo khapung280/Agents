@@ -21,6 +21,9 @@ const plan = () => ({
       url: null,
       text: null,
       path: null,
+      customers: null,
+      price: null,
+      expenses: null,
     },
   ],
 });
@@ -397,6 +400,9 @@ test("valid model dependencies execute through the existing engine, including se
           url: null,
           text: null,
           path: null,
+          customers: null,
+          price: null,
+          expenses: null,
         },
         {
           key: "note",
@@ -407,6 +413,9 @@ test("valid model dependencies execute through the existing engine, including se
           url: null,
           text: "A safe fixture note.",
           path: "fixture-note.txt",
+          customers: null,
+          price: null,
+          expenses: null,
         },
       ],
     };
@@ -465,6 +474,9 @@ test("plan validation supports all ten registered agents without changing grants
             url: "https://example.com",
             text: "const sample = 1;",
             path: null,
+            customers: null,
+            price: null,
+            expenses: null,
           },
         ],
       };
@@ -476,6 +488,31 @@ test("plan validation supports all ten registered agents without changing grants
         8,
       );
       assert.equal(result.steps[1].request.agent, agent);
+      if (tool === "business.brief") {
+        const numbers = {
+          ...candidate,
+          steps: [
+            {
+              ...candidate.steps[1],
+              key: "business",
+              after: [],
+              customers: 42,
+              price: 15,
+              expenses: 100,
+            },
+          ],
+        };
+        const numericPlan = validateModelPlan(
+          numbers,
+          task,
+          ["example.com"],
+          store.policy().agents,
+          8,
+        );
+        assert.equal(numericPlan.steps[0].request.customers, 42);
+        assert.equal(numericPlan.steps[0].request.price, 15);
+        assert.equal(numericPlan.steps[0].request.expenses, 100);
+      }
     }
   });
 });

@@ -55,6 +55,8 @@ Read [Windows setup and native validation](docs/WINDOWS_CONTROL.md). `npm run te
 
 ## Model configuration
 
+API-independent additions and their acceptance limits are documented in [the offline completion report](docs/OFFLINE_COMPLETION.md): approved disposable Notepad steps, a fixed sample repair with real tests, scoped context summaries, browser safeguards and English/Nepali voice controls. Configure the OpenAI key only at final integration; all these tools can be tested without paid calls.
+
 The OpenAI adapter now uses the Responses API with strict typed workflow proposals, bounded requests, and persistent cost accounting. See the [AI brain audit, phase status and proposed next architecture](docs/AI_BRAIN_PHASES.md). Computer also includes guided plan/screen sessions with exact-image sharing approval, one-action review, evidence verification, and persistent recovery checkpoints. Live model and vision-guided acceptance remain pending.
 
 For the first live test, follow the [reasoning and observation-only Windows vision preparation](docs/FIRST_LIVE_AI_TEST.md). It includes an offline request/cost preflight, exact approval boundaries, and unresolved model/pricing prerequisites; preparation does not authorize spending.

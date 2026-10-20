@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NotepadRequest, type TestDocument } from "./notepad.js";
 import type { ReasoningSession, ScreenShareGrant } from "./reasoning.js";
 import {
   ComputerRequest,
@@ -23,12 +24,15 @@ export const toolNames = [
   "workspace.inventory",
   "browser.inspect",
   "code.review",
+  "code.sample.repair",
+  "notepad.test",
   "research.collect",
   "business.brief",
   "marketing.audit",
   "communication.draft",
   "project.plan",
   "memory.search",
+  "memory.summarize",
   "supervisor.verify",
   "workspace.write",
   "model.draft",
@@ -86,6 +90,7 @@ export const agents: AgentDefinition[] = [
     tools: [
       "workspace.inventory",
       "workspace.write",
+      "notepad.test",
       "computer.observe",
       "computer.launch",
       "computer.act",
@@ -109,9 +114,9 @@ export const agents: AgentDefinition[] = [
     name: "Developer Agent",
     role: "Code intelligence",
     color: "#ad8fff",
-    tools: ["code.review", "model.draft"],
+    tools: ["code.review", "code.sample.repair", "model.draft"],
     description:
-      "Analyzes TypeScript source with compiler diagnostics. Can prepare model-assisted code drafts when a provider is configured; no unrestricted shell execution.",
+      "Reviews TypeScript syntax and repairs a fixed disposable sample with real tests after approval. Optional model drafts require configuration; no arbitrary repository execution.",
   },
   {
     id: "research",
@@ -163,9 +168,9 @@ export const agents: AgentDefinition[] = [
     name: "Memory Agent",
     role: "Context & knowledge",
     color: "#c0a1ef",
-    tools: ["memory.search"],
+    tools: ["memory.search", "memory.summarize"],
     description:
-      "Searches user-reviewed memories within one project scope. Memories can be edited and deleted.",
+      "Searches user-reviewed memories and creates bounded local summaries with source references within one project scope. No semantic inference or automatic screen sharing.",
   },
   {
     id: "supervisor",
@@ -181,6 +186,8 @@ for (const agent of agents) agent.tools.push("computer.delegate");
 
 export const requiresApproval = (tool: ToolName) =>
   [
+    "code.sample.repair",
+    "notepad.test",
     "workspace.write",
     "model.draft",
     "model.plan",
@@ -198,6 +205,7 @@ export const TaskInput = z.object({
   tool: z.enum(toolNames).optional(),
   projectId: z.string().max(100).default("personal"),
   computer: ComputerRequest.optional(),
+  notepad: NotepadRequest.optional(),
   visionGrantId: z.uuid().optional(),
   browser: BrowserInteraction.optional(),
   url: z.url().max(2048).optional(),
@@ -289,6 +297,7 @@ export interface Policy {
 }
 export interface Snapshot {
   reasoningSessions: ReasoningSession[];
+  testDocuments: TestDocument[];
   screenGrants: ScreenShareGrant[];
   agents: AgentDefinition[];
   tasks: Task[];

@@ -188,7 +188,13 @@ export async function requestModel(task: Task, ctx: ToolContext) {
     source: task.input.text ?? "",
     sourceUrl: task.input.url ?? null,
     upstream: (ctx.upstream ?? [])
-      .filter((t) => t.input.projectId === task.input.projectId)
+      .filter(
+        (t) =>
+          t.input.projectId === task.input.projectId &&
+          !t.tool.startsWith("computer.") &&
+          t.tool !== "model.vision" &&
+          t.tool !== "notepad.test",
+      )
       .map((t) => ({
         taskId: t.id,
         objective: t.objective,
@@ -208,7 +214,7 @@ export async function requestModel(task: Task, ctx: ToolContext) {
     if (key) prompt = prompt.split(key).join("[redacted]");
   if (Buffer.byteLength(JSON.stringify(context)) > 32000)
     throw new Error(
-      "Model context exceeds 32000 bytes. Select a smaller evidence set; no context was silently omitted.",
+      "Model context exceeds 32000 bytes. Select a smaller evidence set or explicitly create and review a local memory.summarize task; no context was silently omitted.",
     );
   const body = vision
     ? {

@@ -6,6 +6,7 @@ import type { ModuleContext } from "../Modules";
 export function KnowledgeModule({
   s,
   act,
+  openTask,
   query,
   setQuery,
   editing,
@@ -17,6 +18,7 @@ export function KnowledgeModule({
   ModuleContext,
   | "s"
   | "act"
+  | "openTask"
   | "query"
   | "setQuery"
   | "editing"
@@ -30,6 +32,33 @@ export function KnowledgeModule({
       <div className="section-lead">
         <p>Reviewed knowledge. Scoped to the project you choose.</p>
         <Badge state="local" />
+      </div>
+      <div className="button-row">
+        <button
+          className="secondary"
+          disabled={s.policy.stopped}
+          onClick={() =>
+            act(async () => {
+              const task = await api<import("../../../shared/contracts").Task>(
+                "/tasks",
+                "POST",
+                {
+                  agent: "memory",
+                  tool: "memory.summarize",
+                  projectId: scope,
+                  objective: "Summarize local evidence for this scope",
+                },
+              );
+              openTask(task);
+            })
+          }
+        >
+          Summarize selected scope
+        </button>
+        <small>
+          Local excerpts with evidence references and visible omissions. No
+          model or screen upload.
+        </small>
       </div>
       <form
         className="form inset"

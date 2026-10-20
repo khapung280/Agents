@@ -135,6 +135,7 @@ export const WindowsPolicy = z
             name: z.string().min(1).max(100),
             executable: z.string().regex(/^[a-zA-Z]:\\.+\.exe$/i),
             allowLaunch: z.boolean().default(false),
+            allowTestDocuments: z.boolean().optional(),
             actions: z
               .array(
                 z.enum([
@@ -168,7 +169,7 @@ export interface ComputerStatus {
   reason: string;
   apps: Pick<
     ComputerPolicy["apps"][number],
-    "id" | "name" | "allowLaunch" | "actions"
+    "id" | "name" | "allowLaunch" | "allowTestDocuments" | "actions"
   >[];
 }
 

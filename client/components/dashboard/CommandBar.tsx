@@ -56,7 +56,9 @@ export function CommandBar({
             type="button"
             className={`icon-button ${voice.listening ? "listening" : ""}`}
             aria-label={
-              voice.listening ? "Stop listening" : "Start voice input"
+              voice.listening || voice.starting
+                ? "Stop listening"
+                : "Start voice input"
             }
             onClick={() => void voice.listen()}
           >

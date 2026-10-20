@@ -171,7 +171,7 @@ export function TaskForm({
               onChange={(e) => setTool(e.target.value as ToolName)}
             >
               {description.tools
-                .filter((t) => t !== "model.vision")
+                .filter((t) => t !== "model.vision" && t !== "notepad.test")
                 .map((t) => (
                   <option key={t}>{t}</option>
                 ))}
@@ -181,6 +181,14 @@ export function TaskForm({
       )}
       {strategy === "single" && (
         <p className="hint">{description.description}</p>
+      )}
+      {tool === "code.sample.repair" && (
+        <p className="hint">
+          Runs only the bundled disposable arithmetic sample: actual failing
+          tests, a fixed subtraction-to-addition patch, then actual passing
+          tests. Requires task approval. No owner repository or arbitrary
+          program is executed.
+        </p>
       )}
       <label>
         Project scope
@@ -235,6 +243,7 @@ export function TaskForm({
           "workspace.write",
           "communication.draft",
           "memory.search",
+          "memory.summarize",
           "model.draft",
           "model.plan",
         ].includes(tool) && (

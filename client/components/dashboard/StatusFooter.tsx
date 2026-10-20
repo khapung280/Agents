@@ -16,7 +16,7 @@ export function StatusFooter({
       <span>
         AGENTS OS <b>v0.1</b>
         <i />
-        All systems observable
+        Tool evidence and permissions visible
       </span>
       <button
         onClick={() => {

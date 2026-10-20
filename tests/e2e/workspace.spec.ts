@@ -1,18 +1,10 @@
 import { interactWithPage } from "../../server/computer/browser.js";
-import { join } from "node:path";
+import { openDashboard } from "./dashboard-session.js";
 import { test, expect } from "@playwright/test";
-import { readFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 
 async function pair(page: import("@playwright/test").Page) {
-  const token = (
-    await readFile(
-      join(process.env.AGENTS_E2E_DATA_DIR!, "pairing-token"),
-      "utf8",
-    )
-  ).trim();
-  const response = await page.request.post("/api/session", { data: { token } });
-  expect(response.ok()).toBeTruthy();
-  await page.goto("/");
+  await openDashboard(page);
   await expect(
     page.getByRole("heading", { name: "Your intelligence, amplified." }),
   ).toBeVisible();
@@ -228,11 +220,9 @@ test("settings persist real autonomy policy and visual quality", async ({
   await expect(
     dialog.getByRole("status", { name: "Windows control status" }),
   ).toHaveText(runtimeState.capabilities.computer.reason);
-  const readiness = dialog
-    .locator("section")
-    .filter({
-      has: page.getByRole("heading", { name: "Windows control readiness" }),
-    });
+  const readiness = dialog.locator("section").filter({
+    has: page.getByRole("heading", { name: "Windows control readiness" }),
+  });
   await expect(
     readiness.getByText(runtimeState.capabilities.computer.platform, {
       exact: true,
@@ -509,4 +499,47 @@ test("Playwright refuses ambiguous/password targets, already-true assertions, ca
   await expect(
     interactWithPage(page, { action, expect: expectResult }, signal),
   ).rejects.toThrow("not verified");
+});
+
+test("browser protects credential/payment fields and cancellation cannot dispatch a delayed click", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<input aria-label="Card number" autocomplete="cc-number"><input aria-label="API key"><button disabled onclick="window.clicked=true">Delayed</button><h2 aria-label="Result">Waiting</h2>',
+  );
+  const expectResult = {
+    target: { role: "heading" as const, name: "Result" },
+    property: "text" as const,
+    equals: "Changed",
+  };
+  for (const name of ["Card number", "API key"]) {
+    await expect(
+      interactWithPage(
+        page,
+        {
+          action: {
+            kind: "fill",
+            target: { role: "textbox", name },
+            text: "never sent",
+          },
+          expect: expectResult,
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("not supported");
+    await expect(page.getByRole("textbox", { name })).toHaveValue("");
+  }
+  const controller = new AbortController();
+  const operation = interactWithPage(
+    page,
+    {
+      action: { kind: "click", target: { role: "button", name: "Delayed" } },
+      expect: expectResult,
+    },
+    controller.signal,
+  );
+  const failure = expect(operation).rejects.toThrow();
+  controller.abort();
+  await failure;
+  expect(page.isClosed()).toBe(true);
 });

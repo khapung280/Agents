@@ -59,6 +59,50 @@ try {
   console.log(
     "PASS: Electron launched, paired, rendered the core, reused its existing instance, kept Node out of the renderer, and completed a real workflow.",
   );
+  // The service uses Electron-as-Node in the installed app. Verify the new fixed
+  // sample runner with that actual executable, not just the development Node.
+  const sample = await page.evaluate(async () => {
+    const response = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent: "developer",
+        tool: "code.sample.repair",
+        objective: "Verify packaged-runtime sample tests",
+      }),
+    });
+    if (!response.ok) throw new Error("Sample submission failed");
+    return response.json();
+  });
+  const sampleTask = await page.evaluate(async (id) => {
+    const state = await (await fetch("/api/state")).json();
+    return state.tasks.find(
+      (task) => task.parentId === id && task.tool === "code.sample.repair",
+    );
+  }, sample.id);
+  assert.equal(sampleTask.state, "waiting_approval");
+  const approved = await page.evaluate(async (id) => {
+    const response = await fetch("/api/approvals/" + id, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approve: true }),
+    });
+    return response.ok;
+  }, sampleTask.id);
+  assert.ok(approved);
+  await page.waitForFunction(
+    async (id) => {
+      const state = await (await fetch("/api/state")).json();
+      const task = state.tasks.find((task) => task.id === id);
+      if (task?.state === "failed") throw new Error(task.error);
+      return task?.state === "completed";
+    },
+    sample.id,
+    { timeout: 15000 },
+  );
+  console.log(
+    "PASS: Electron-as-Node executed the approved bundled repair with real failing and passing tests.",
+  );
   await app.close();
   app = undefined;
   await assert.rejects(

@@ -105,6 +105,34 @@ The launch tool deliberately verifies the exact newly started process. Apps that
 
 The real Chromium tests exercise local intercepted fixtures. Public browsing remains blocked by this cloud host's direct DNS; this task did not weaken that boundary or modify its network configuration.
 
+## Approved disposable Notepad test (no API key)
+
+The Computer module includes a separate **Disposable Notepad test**. This implementation requires real-device acceptance; simulated cloud transports and successful native compilation do not establish Notepad compatibility.
+
+After the disposable Windows validation fixture passes, review your existing local policy and add a narrow entry for the actual Notepad executable, preserving other settings:
+
+```json
+{
+  "id": "notepad-test",
+  "name": "Notepad disposable test",
+  "executable": "C:\\Windows\\System32\\notepad.exe",
+  "allowLaunch": true,
+  "allowTestDocuments": true,
+  "actions": ["focus", "click", "typeText"]
+}
+```
+
+The executable above is an example; Windows 11 may use a packaged Notepad or a launch shim. Review the actual executable path. A shim/process handoff is deliberately rejected, even if a window opens. Do not broaden permissions or repeatedly launch after an uncertain result. Policy must explicitly be enabled locally and the application restarted. No cloud policy was enabled.
+
+1. Open **AGENTS → Computer → Disposable Notepad test**. Choose the reviewed app, project scope and a short one-line test string. Click **Request test document**, inspect the request, then **Approve once**. This only creates an empty fresh app-owned file.
+2. Click **Request launch approval**, review the document path/text, then approve. Inspect the captured document title and editor.
+3. If necessary, request/approve focus. Window activation and editor selection may require separate focus steps. If evidence expires, request and approve a fresh observation. Do not move, resize or switch applications during an approved input.
+4. Request/approve **write**. UI Automation must read back the exact text. The file is still required to be empty until save.
+5. Request/approve **save** separately. Only Ctrl+S for this registered document is allowed. Success requires matching live editor text and exact UTF-8 file bytes/hash within three seconds; the checkpoint shows `saved` and its SHA-256.
+6. On failure, stop and review retained task diagnostics/evidence. The test is blocked and never replays input after restart, cancellation or uncertainty. Close only the disposable document manually when finished.
+
+The document has a ten-minute deadline. A single-line, one-editor UTF-8 document is the supported initial test. Ambiguous tabs/controls, unavailable TextPattern/ValuePattern, process handoff, unexpected encoding/BOM or any changed file cause explicit failure. No Save As dialog, existing user file overwrite, unrestricted Ctrl+S command, security-policy change or screenshot upload is introduced.
+
 ## OpenAI preparation and credentials
 
 `computer.vision.prepare` creates an offline bundle from an actual in-session observation. The pure `buildOpenAIVisionRequest` helper builds a Responses API image/text request and verifies the PNG hash. No fetch, provider key lookup, or execution occurs. The proposal schema describes one bounded action, never a completion claim. Screenshots and UI text are marked untrusted.

@@ -15,10 +15,22 @@ import {
 } from "../../shared/computer.js";
 import type { Store } from "../store.js";
 
+export interface NativeDocument {
+  path: string;
+  name: string;
+  expectedText: string;
+  elementId?: string;
+}
+export interface SaveDocumentCommand {
+  kind: "saveDocument";
+  observationId: string;
+  elementId: string;
+}
 export interface NativeRequest {
-  command: ComputerCommand;
+  command: ComputerCommand | SaveDocumentCommand;
   executable: string;
   before?: WindowState;
+  document?: NativeDocument;
 }
 export interface NativeResult {
   window: WindowState;
@@ -147,12 +159,15 @@ export class WindowsComputer {
             : this.verified
               ? "A native observation succeeded in this service session. Individual actions still require verification."
               : "Adapter configured; native observation and input are not yet verified."),
-      apps: this.policy.apps.map(({ id, name, allowLaunch, actions }) => ({
-        id,
-        name,
-        allowLaunch,
-        actions,
-      })),
+      apps: this.policy.apps.map(
+        ({ id, name, allowLaunch, allowTestDocuments, actions }) => ({
+          id,
+          name,
+          allowLaunch,
+          allowTestDocuments,
+          actions,
+        }),
+      ),
     };
   }
   observation(id: string, scope: string): ComputerObservation {
@@ -171,17 +186,18 @@ export class WindowsComputer {
     return (this.options.now ?? Date.now)();
   }
   async execute(
-    command: Exclude<ComputerCommand, { kind: "vision" }>,
+    command: Exclude<ComputerCommand, { kind: "vision" }> | SaveDocumentCommand,
     projectId: string,
     taskId: string,
     signal: AbortSignal,
     progress: (message: string) => void,
+    document?: NativeDocument,
   ) {
     if (!this.status().available) throw new Error(this.status().reason);
     if (this.busy) throw new Error("Another desktop operation is in progress.");
     signal.throwIfAborted();
     const before =
-      command.kind === "act"
+      command.kind === "act" || command.kind === "saveDocument"
         ? this.observation(command.observationId, projectId)
         : undefined;
     const app = this.policy.apps.find(
@@ -189,18 +205,44 @@ export class WindowsComputer {
     );
     if (!app)
       throw new Error("Application is not in the local Windows allowlist.");
+    if (
+      (document || command.kind === "saveDocument") &&
+      (!document ||
+        !app.allowTestDocuments ||
+        !/\\notepad\.exe$/i.test(app.executable))
+    )
+      throw new Error(
+        "Registered test documents require explicit Notepad test-document permission.",
+      );
     if (command.kind === "launch" && !app.allowLaunch)
       throw new Error(
         "Application launch is not permitted by the local policy.",
       );
-    if (command.kind === "act") {
+    if (command.kind === "act" || command.kind === "saveDocument") {
+      if (
+        command.kind === "saveDocument" &&
+        (!document ||
+          document.elementId !== command.elementId ||
+          !before!.window.foreground ||
+          !before!.window.elements.some(
+            (e) =>
+              e.id === command.elementId &&
+              !e.password &&
+              e.enabled &&
+              e.focused &&
+              e.value === document.expectedText,
+          ))
+      )
+        throw new Error(
+          "Registered save target or expected contents are not verified.",
+        );
       if (this.consumed.has(command.observationId))
         throw new Error(
           "This observation has already authorized an action. Observe again; inputs are never replayed.",
         );
-      if (!app.actions.includes(command.action.kind))
+      if (command.kind === "act" && !app.actions.includes(command.action.kind))
         throw new Error("Action is not permitted for this application.");
-      if (command.action.kind !== "focus") {
+      if (command.kind === "act" && command.action.kind !== "focus") {
         const elementId = command.action.elementId;
         const element = before!.window.elements.find((e) => e.id === elementId);
         if (!element || element.password || !element.enabled)
@@ -209,6 +251,7 @@ export class WindowsComputer {
           );
       }
       if (
+        command.kind === "act" &&
         command.expect &&
         !before!.window.elements.some(
           (e) => e.id === command.expect!.elementId && !e.password,
@@ -217,7 +260,7 @@ export class WindowsComputer {
         throw new Error(
           "Postcondition must reference a non-password element in the observation.",
         );
-      if (command.expect) {
+      if (command.kind === "act" && command.expect) {
         const element = before!.window.elements.find(
           (e) => e.id === command.expect!.elementId,
         )!;
@@ -246,9 +289,17 @@ export class WindowsComputer {
     );
     try {
       const native = await (this.options.transport ?? runWindowsWorker)(
-        { command, executable: app.executable, before: before?.window },
+        {
+          command,
+          executable: app.executable,
+          before: before?.window,
+          ...(document ? { document } : {}),
+        },
         signal,
-        this.options.diagnostic,
+        (message) => {
+          progress(message);
+          this.options.diagnostic?.(message);
+        },
       );
       signal.throwIfAborted();
       const window = WindowEvidence.parse(native.window);
@@ -256,16 +307,24 @@ export class WindowsComputer {
         throw new Error(
           "Observed process does not match the authorized executable.",
         );
-      if (command.kind === "act") {
+      if (document && !window.title.includes(document.name))
+        throw new Error(
+          "Registered document title could not be verified; no target guessing is allowed.",
+        );
+      if (command.kind === "act" || command.kind === "saveDocument") {
         if (
           window.windowId !== before!.window.windowId ||
           window.processId !== before!.window.processId ||
           window.processStartedAt !== before!.window.processStartedAt
         )
           throw new Error("Action evidence changed process identity.");
-        if (command.action.kind === "focus" && !window.foreground)
+        if (
+          command.kind === "act" &&
+          command.action.kind === "focus" &&
+          !window.foreground
+        )
           throw new Error("Foreground activation was not verified.");
-        if (command.action.kind === "setText") {
+        if (command.kind === "act" && command.action.kind === "setText") {
           const action = command.action;
           if (
             !window.elements.some(
@@ -279,7 +338,7 @@ export class WindowsComputer {
               "Written text did not match UI Automation read-back.",
             );
         }
-        if (command.expect) {
+        if (command.kind === "act" && command.expect) {
           const expected = command.expect;
           if (
             !window.elements.some(
@@ -293,6 +352,20 @@ export class WindowsComputer {
               "Action postcondition did not match fresh evidence.",
             );
         }
+        if (
+          command.kind === "saveDocument" &&
+          (!window.foreground ||
+            !window.elements.some(
+              (e) =>
+                e.id === command.elementId &&
+                e.focused &&
+                !e.password &&
+                e.value === document!.expectedText,
+            ))
+        )
+          throw new Error(
+            "Saved document UI evidence changed. No replay is allowed.",
+          );
       }
       const png = Buffer.from(native.png, "base64");
       if (

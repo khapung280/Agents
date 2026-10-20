@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { api, useSystem } from "./api";
 import { useVoice } from "./voice";
+import { VoiceControls } from "./components/VoiceControls";
 import { Dialog, Empty } from "./components/Primitives";
 import { Modules, type View, type VisualSettings } from "./components/Modules";
 import { TaskForm } from "./components/TaskForm";
@@ -211,6 +212,12 @@ function CommandCenter({
     void fn().catch((e) => setToast((e as Error).message));
   };
   const voice = useVoice(setCommand, () => act(() => api("/stop", "POST")));
+  useEffect(() => {
+    if (s.policy.stopped) {
+      voice.stop();
+      voice.interrupt();
+    }
+  }, [s.policy.stopped]);
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(timer);
@@ -442,6 +449,7 @@ function CommandCenter({
               {voice.error}
             </p>
           )}
+          <VoiceControls voice={voice} />
           {voice.speaking && (
             <button className="secondary" onClick={voice.interrupt}>
               <VolumeX size={16} />

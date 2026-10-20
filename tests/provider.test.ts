@@ -50,6 +50,54 @@ const reply = (body: unknown) =>
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+
+test("ordinary model planning never implicitly shares Notepad screen checkpoints", async () => {
+  await fixture(async ({ create, store }) => {
+    const task = create();
+    let calls = 0;
+    globalThis.fetch = async (_url, init) => {
+      calls++;
+      assert.ok(!String(init!.body).includes("PRIVATE_SCREEN_SENTINEL"));
+      assert.ok(String(init!.body).includes("Local reviewed evidence"));
+      return reply(responseBody());
+    };
+    await executeTool(task, {
+      store,
+      signal: new AbortController().signal,
+      hosts: ["example.com"],
+      progress() {},
+      upstream: [
+        {
+          ...task,
+          id: "screen-source",
+          tool: "notepad.test",
+          output: [
+            {
+              id: "s",
+              kind: "json",
+              name: "Notepad document checkpoint",
+              content: "PRIVATE_SCREEN_SENTINEL",
+            },
+          ],
+        },
+        {
+          ...task,
+          id: "local-source",
+          tool: "business.brief",
+          output: [
+            {
+              id: "b",
+              kind: "text",
+              name: "Evidence",
+              content: "Local reviewed evidence",
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(calls, 1); // Fully replaced transport; no paid HTTP call.
+  });
+});
 async function fixture(
   run: (f: {
     store: Store;

@@ -17,6 +17,9 @@ import { prepareVision } from "./computer/vision.js";
 import { interactWithPage } from "./computer/browser.js";
 import { Store } from "./store.js";
 import { requestModel } from "./model-provider.js";
+import { summarizeContext } from "./context-summary.js";
+import { repairSample } from "./sample-repair.js";
+import type { NotepadTests } from "./computer/notepad.js";
 export { providerInfo } from "./model-provider.js";
 
 export interface ToolResult {
@@ -37,6 +40,7 @@ export interface PageEvidence {
 export interface ToolContext {
   store: Store;
   computer?: WindowsComputer;
+  notepad?: NotepadTests;
   signal: AbortSignal;
   upstream?: Task[];
   hosts: string[];
@@ -213,6 +217,37 @@ export async function executeTool(
     verification,
   });
   switch (task.tool) {
+    case "notepad.test": {
+      if (!ctx.notepad) throw new Error("Notepad test adapter is unavailable.");
+      const report = await ctx.notepad.run(task, ctx.signal, ctx.progress);
+      return result(
+        [
+          jsonArtifact("Notepad document checkpoint", report.document),
+          ...(report.observation
+            ? [
+                jsonArtifact("Windows observation", report.observation),
+                {
+                  id: randomUUID(),
+                  name: "Windows window capture",
+                  kind: "image" as const,
+                  path: report.observation.screenshot,
+                },
+              ]
+            : []),
+        ],
+        report.verification,
+      );
+    }
+    case "code.sample.repair": {
+      const report = await repairSample(task, ctx);
+      return result(
+        [
+          jsonArtifact("Sample repair evidence", report),
+          textArtifact("Exact sample patch", report.diff),
+        ],
+        report.verification,
+      );
+    }
     case "computer.observe":
     case "computer.launch":
     case "computer.act":
@@ -429,9 +464,21 @@ export async function executeTool(
               ctx.upstream?.length
                 ? "\n\nUpstream task outputs for your review:\n" +
                   ctx.upstream
+                    .filter(
+                      (t) =>
+                        t.input.projectId === input.projectId &&
+                        !t.tool.startsWith("computer.") &&
+                        t.tool !== "model.vision" &&
+                        t.tool !== "notepad.test",
+                    )
                     .map((t) =>
                       t.output
-                        .filter((a) => a.content)
+                        .filter(
+                          (a) =>
+                            a.content &&
+                            a.kind !== "image" &&
+                            !/Windows|vision/i.test(a.name),
+                        )
                         .map((a) => a.content)
                         .join("\n"),
                     )
@@ -476,10 +523,35 @@ export async function executeTool(
         "Project and four editable planning checkpoints persisted.",
       );
     }
+    case "memory.summarize": {
+      ctx.progress(
+        "Summarizing local scoped evidence with source references; no model request",
+      );
+      const summary = summarizeContext({
+        projectId: input.projectId,
+        text: input.text,
+        tasks: ctx.upstream?.length
+          ? ctx.upstream
+          : ctx.store
+              .tasks()
+              .filter(
+                (t) =>
+                  !t.workflow &&
+                  t.id !== task.id &&
+                  t.parentId !== task.parentId,
+              ),
+        memories: ctx.store.memories(),
+      });
+      return result(
+        [jsonArtifact("Scoped context summary", summary)],
+        `Retained ${summary.entries.length} source excerpts; ${summary.omittedSources} sources omitted and ${summary.excludedScreenArtifacts} screen artifacts excluded. Originals remain in local history.`,
+      );
+    }
     case "memory.search": {
       const terms = (input.text ?? task.objective)
         .toLowerCase()
-        .split(/\W+/)
+        .normalize("NFC")
+        .split(/[^\p{L}\p{N}\p{M}]+/u)
         .filter((w) => w.length > 2);
       const matches = ctx.store
         .memories()
@@ -488,7 +560,13 @@ export async function executeTool(
           memory: m,
           score: terms.reduce(
             (n, t) =>
-              n + Number(`${m.title} ${m.content}`.toLowerCase().includes(t)),
+              n +
+              Number(
+                `${m.title} ${m.content}`
+                  .normalize("NFC")
+                  .toLowerCase()
+                  .includes(t),
+              ),
             0,
           ),
         }))
@@ -507,13 +585,27 @@ export async function executeTool(
       );
     }
     case "supervisor.verify": {
+      if (
+        task.dependsOn.some((id) => {
+          const dependency = ctx.store.get<Task>("task", id);
+          return !dependency || dependency.input.projectId !== input.projectId;
+        })
+      )
+        throw new Error(
+          "Supervisor dependencies must exist in the same project scope.",
+        );
       const targets = task.dependsOn.length
         ? task.dependsOn
             .map((id) => ctx.store.get<Task>("task", id))
             .filter((t): t is Task => !!t)
         : ctx.store
             .tasks()
-            .filter((t) => t.id !== task.id && t.state === "completed")
+            .filter(
+              (t) =>
+                t.id !== task.id &&
+                t.state === "completed" &&
+                t.input.projectId === input.projectId,
+            )
             .slice(0, 20);
       const checks = targets.map((t) => ({
         taskId: t.id,

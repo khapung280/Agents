@@ -23,6 +23,7 @@ import {
 import { WindowsComputer } from "./computer/windows.js";
 import { redact } from "./security.js";
 import { ReasoningSessions } from "./reasoning-sessions.js";
+import { NotepadTests } from "./computer/notepad.js";
 
 const terminal = (t: Task) =>
   ["completed", "failed", "cancelled"].includes(t.state);
@@ -41,6 +42,7 @@ const defaultTool: Record<TaskRequest["agent"], ToolName> = {
 export class Engine extends EventEmitter {
   readonly computer: WindowsComputer;
   readonly reasoning: ReasoningSessions;
+  readonly notepad: NotepadTests;
   active = new Map<string, AbortController>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private ticking = false;
@@ -75,6 +77,7 @@ export class Engine extends EventEmitter {
         store.event("task.blocked", task.error, task);
       }
     this.reasoning = new ReasoningSessions(this);
+    this.notepad = new NotepadTests(store, this.computer);
   }
   start() {
     this.timer = setInterval(() => void this.tick(), 300);
@@ -82,6 +85,9 @@ export class Engine extends EventEmitter {
   }
   async close() {
     this.closed = true;
+    this.notepad.blockAll(
+      "Service closed; start a new disposable test. No replay.",
+    );
     this.reasoning.stopAll(
       "Service closed. Review the checkpoint before recovery; nothing will replay.",
     );
@@ -101,6 +107,12 @@ export class Engine extends EventEmitter {
     this.store.put("task", task.id, task);
   }
   private validateComputer(input: TaskRequest, tool: ToolName) {
+    if (tool === "notepad.test") {
+      if (!input.notepad)
+        throw new Error("A typed Notepad test step is required.");
+      if (input.notepad.kind !== "prepare" && !this.computer.status().available)
+        throw new Error(this.computer.status().reason);
+    }
     if (tool === "model.vision" && !input.visionGrantId)
       throw new Error(
         "Start a guided screen session and review the exact image before requesting vision.",
@@ -193,6 +205,17 @@ export class Engine extends EventEmitter {
       throw new Error("Agent is not authorized for that tool.");
     if (input.dependsOn.some((id) => !this.store.get<Task>("task", id)))
       throw new Error("Dependency does not exist.");
+    if (new Set(input.dependsOn).size !== input.dependsOn.length)
+      throw new Error("Duplicate dependencies are not permitted.");
+    if (
+      input.dependsOn.some(
+        (id) =>
+          this.store.get<Task>("task", id)!.input.projectId !== input.projectId,
+      )
+    )
+      throw new Error(
+        "Dependency evidence must belong to the same project scope.",
+      );
     if (tool.startsWith("model.") && !providerInfo().configured)
       throw new Error(
         "No model provider is configured. Use a built-in tool or configure a provider.",
@@ -259,9 +282,16 @@ export class Engine extends EventEmitter {
       }
     }
     if (policy.stopped) throw new Error("Emergency stop is active.");
+    const projectId = plan.steps[0].request.projectId;
+    if (plan.steps.some((step) => step.request.projectId !== projectId))
+      throw new Error("All workflow steps must use the same project scope.");
     const keys = new Set<string>();
     for (const step of plan.steps) {
-      if (keys.has(step.key) || step.after.some((dep) => !keys.has(dep)))
+      if (
+        keys.has(step.key) ||
+        step.after.some((dep) => !keys.has(dep)) ||
+        new Set(step.after).size !== step.after.length
+      )
         throw new Error(
           "Workflow keys must be unique and dependencies must reference earlier steps.",
         );
@@ -282,7 +312,11 @@ export class Engine extends EventEmitter {
     }
     return this.store.transaction(() => {
       const root = this.make(
-        TaskInput.parse({ objective: plan.objective, agent: "project" }),
+        TaskInput.parse({
+          objective: plan.objective,
+          agent: "project",
+          projectId,
+        }),
         null,
         true,
       );
@@ -312,6 +346,7 @@ export class Engine extends EventEmitter {
           objective: `Verify: ${plan.objective}`,
           agent: "supervisor",
           tool: "supervisor.verify",
+          projectId,
           dependsOn: work.map((t) => t.id),
         }),
         root.id,
@@ -393,6 +428,9 @@ export class Engine extends EventEmitter {
       stopped: true,
     });
     this.reasoning.stopAll("Emergency stop", true);
+    this.notepad.blockAll(
+      "Emergency stop; no document operations will replay.",
+    );
     for (const t of this.store.tasks()) if (!terminal(t)) this.cancel(t.id);
     this.event(
       "system.stopped",
@@ -482,7 +520,10 @@ export class Engine extends EventEmitter {
         );
         if (
           deps.some(
-            (d) => !d || ["failed", "cancelled", "blocked"].includes(d.state),
+            (d) =>
+              !d ||
+              d.input.projectId !== task.input.projectId ||
+              ["failed", "cancelled", "blocked"].includes(d.state),
           )
         ) {
           task.state = "blocked";
@@ -501,10 +542,11 @@ export class Engine extends EventEmitter {
         }
         // Serialize all native operations; independent agents cannot race for desktop focus.
         if (
-          task.tool.startsWith("computer.") &&
-          [...this.active.keys()].some((id) =>
-            this.store.get<Task>("task", id)?.tool.startsWith("computer."),
-          )
+          (task.tool.startsWith("computer.") || task.tool === "notepad.test") &&
+          [...this.active.keys()].some((id) => {
+            const tool = this.store.get<Task>("task", id)?.tool;
+            return tool?.startsWith("computer.") || tool === "notepad.test";
+          })
         )
           continue;
         // Serialize paid calls so budget reservations cannot race.
@@ -594,6 +636,7 @@ export class Engine extends EventEmitter {
         upstream,
         ...this.options,
         computer: this.computer,
+        notepad: this.notepad,
         progress: (message) => this.event("task.progress", message, task),
       });
       // Preserve usage even when cancellation arrives after the provider processed a call.
@@ -602,7 +645,10 @@ export class Engine extends EventEmitter {
         fresh.usage = result.usage;
         this.save(fresh);
       }
-      if (controller.signal.aborted || fresh.state !== "running") return;
+      if (fresh.state !== "running") return;
+      // An uncooperative tool may resolve after its deadline. It must become a
+      // terminal failure, never remain "running" after its slot is released.
+      controller.signal.throwIfAborted();
       if (!result.artifacts.length || !result.verification)
         throw new Error("Tool did not provide evidence and verification.");
       task.output = result.artifacts;
@@ -656,6 +702,7 @@ export class Engine extends EventEmitter {
       .map((t) => t.usage!);
     return {
       reasoningSessions: this.reasoning.list().slice(0, 20),
+      testDocuments: this.notepad.list().slice(0, 20),
       screenGrants: this.reasoning.grants().filter((g) =>
         this.reasoning
           .list()

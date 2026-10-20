@@ -91,6 +91,7 @@ export function Modules({
       <KnowledgeModule
         s={s}
         act={act}
+        openTask={openTask}
         query={query}
         setQuery={setQuery}
         editing={editing}

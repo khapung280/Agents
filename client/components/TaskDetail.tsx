@@ -61,7 +61,7 @@ export function TaskDetail({
         ))}
       {[task, ...children].some(
         (t) =>
-          t.tool.startsWith("computer.") &&
+          (t.tool.startsWith("computer.") || t.tool === "notepad.test") &&
           t.approval === "consumed" &&
           ["failed", "cancelled", "blocked"].includes(t.state),
       ) && (
@@ -130,32 +130,78 @@ export function TaskDetail({
             <p>
               {t.tool === "workspace.write"
                 ? "Create a new file in your isolated workspace."
-                : t.tool.startsWith("computer.")
-                  ? "Observe or control only the specified allowlisted Windows application. This may reveal private screen content or change application state."
-                  : t.tool === "browser.interact"
-                    ? "Perform the exact browser interaction below once, then verify its postcondition."
-                    : "Make one paid model request under your configured budget."}
+                : t.tool === "code.sample.repair"
+                  ? "Create a disposable bundled arithmetic sample, run its actual failing tests, apply the fixed patch, and run verification tests. No owner repository or arbitrary code is executed."
+                  : t.tool.startsWith("computer.") || t.tool === "notepad.test"
+                    ? "Observe or control only the specified allowlisted Windows application. This may reveal private screen content or change application state."
+                    : t.tool === "browser.interact"
+                      ? "Perform the exact browser interaction below once, then verify its postcondition."
+                      : "Make one paid model request under your configured budget."}
             </p>
             <dl>
               <dt>Agent</dt>
               <dd>{t.agent}</dd>
               <dt>Target</dt>
               <dd>
-                {t.input.computer
-                  ? JSON.stringify(t.input.computer)
-                  : (t.input.url ?? t.input.path ?? snapshot.provider.name)}
+                {t.input.notepad
+                  ? JSON.stringify(t.input.notepad)
+                  : t.tool === "code.sample.repair"
+                    ? "Fixed bundled arithmetic sample in a fresh app-owned directory"
+                    : t.input.computer
+                      ? JSON.stringify(t.input.computer)
+                      : (t.input.url ?? t.input.path ?? snapshot.provider.name)}
               </dd>
               <dt>Impact</dt>
               <dd>
                 {t.tool === "workspace.write"
                   ? "Local file creation; no overwrite"
-                  : t.tool.startsWith("computer.")
-                    ? "Local screen capture or PC input; review the exact command. No automatic retry."
-                    : t.tool === "browser.interact"
-                      ? "Browser input on the allowed website; may change page state"
-                      : "External model processing and API cost"}
+                  : t.tool === "code.sample.repair"
+                    ? "Local sample creation and fixed tests; no model call or package installation"
+                    : t.tool.startsWith("computer.") ||
+                        t.tool === "notepad.test"
+                      ? "Local screen capture or PC input; review the exact command. No automatic retry."
+                      : t.tool === "browser.interact"
+                        ? "Browser input on the allowed website; may change page state"
+                        : "External model processing and API cost"}
               </dd>
             </dl>
+            {t.input.notepad &&
+              "documentId" in t.input.notepad &&
+              (() => {
+                const id = t.input.notepad.documentId;
+                const document = snapshot.testDocuments.find(
+                  (d) => d.id === id,
+                );
+                return document ? (
+                  <details open>
+                    <summary>
+                      Registered document and exact approved text
+                    </summary>
+                    <pre>
+                      {JSON.stringify(
+                        {
+                          file: document.path,
+                          text: document.text,
+                          expectedSha256: document.expectedSha256,
+                          checkpoint: document.state,
+                        },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                    {document.lastObservation && (
+                      <img
+                        className="computer-observation"
+                        src={
+                          "/api/artifacts/" +
+                          document.lastObservation.screenshot
+                        }
+                        alt="Actual document window before this approval"
+                      />
+                    )}
+                  </details>
+                ) : null;
+              })()}
             {t.input.computer &&
               "observationId" in t.input.computer &&
               (() => {

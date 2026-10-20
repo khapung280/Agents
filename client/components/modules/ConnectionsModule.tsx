@@ -1,5 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 import { ReasoningPanel } from "../ReasoningPanel";
+import { NotepadPanel } from "../NotepadPanel";
 
 import { AgentIcon, Badge, Empty } from "../Primitives";
 import type { ModuleContext } from "../Modules";
@@ -49,6 +50,9 @@ export function ConnectionsModule({
           <ArrowUpRight size={17} />
         </button>
       </div>
+      {view === "Computer" && (
+        <NotepadPanel s={s} act={act} openTask={openTask} />
+      )}
       {view === "Computer" && (
         <ReasoningPanel s={s} act={act} openTask={openTask} />
       )}

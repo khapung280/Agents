@@ -1,4 +1,4 @@
-# Fixed local worker. No command text, executable arguments, or scripts accepted from requests.
+# Fixed local worker. Only a registered test-document path may be passed to Notepad; no arbitrary arguments or scripts.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -19,10 +19,17 @@ try {
   [AgentsDesktop.Native]::CheckDesktop()
   $windowId = 0L
   if ($command.kind -eq 'launch') {
-    # No arguments, shell resolution, URI activation, or automatic elevation.
+    # No shell resolution, URI activation or elevation. Optional single registered Notepad document only.
     $start = New-Object Diagnostics.ProcessStartInfo
     $start.FileName = $exe
     $start.UseShellExecute = $false
+    if ($request.document) {
+      if ([IO.Path]::GetFileName($exe) -ine 'notepad.exe') { throw 'Only Notepad accepts a registered test document.' }
+      [AgentsDesktop.Native]::ValidateTestFile([string]$request.document.path, [string]$request.document.name)
+      # Windows paths cannot contain quotes; canonical fixed file has no trailing slash.
+      if ([string]$request.document.path -match '["\r\n]') { throw 'Invalid test-document path.' }
+      $start.Arguments = '"' + [string]$request.document.path + '"'
+    }
     # The worker process override must not propagate to the launched application.
     $start.EnvironmentVariables.Remove('PSExecutionPolicyPreference')
     Write-Stage 'launch-application'
@@ -40,20 +47,32 @@ try {
   } elseif ($command.kind -eq 'observe') {
     if ($command.windowId) { $windowId = [long]::Parse($command.windowId) }
     else { $windowId = [AgentsDesktop.Native]::FindWindow($exe) }
-  } elseif ($command.kind -eq 'act') {
+  } elseif ($command.kind -eq 'act' -or $command.kind -eq 'saveDocument') {
     if (-not $request.before) { throw 'An observation is required.' }
     $windowId = [long]::Parse($request.before.windowId)
   } else { throw 'Unsupported Windows command.' }
   Write-Stage 'observe-window'
   $window = [AgentsDesktop.Native]::Observe($windowId, $exe)
+  if ($request.document) {
+    Write-Stage 'validate-test-document'
+    [AgentsDesktop.Native]::ValidateTestDocument($windowId,$exe,[string]$request.document.path,[string]$request.document.name,[string]$request.document.elementId,[string]$request.document.expectedText)
+  }
   $verification = 'Observed the authorized application window and captured a masked window image.'
-  if ($command.kind -eq 'act') {
+  if ($command.kind -eq 'act' -or $command.kind -eq 'saveDocument') {
     Write-Stage 'validate-target'
     $before = $request.before
     if ($window.processId -ne $before.processId -or $window.processStartedAt -ne $before.processStartedAt) { throw 'Process identity changed; observe again.' }
     foreach ($property in @('x','y','width','height')) {
       if ([Math]::Abs($window.bounds.$property - $before.bounds.$property) -gt 1) { throw 'Window moved or resized; observe again.' }
     }
+    if ($command.kind -eq 'saveDocument') {
+      if (-not $request.document -or $command.elementId -cne $request.document.elementId) { throw 'Registered save authorization is missing.' }
+      Write-Stage 'save-test-document'
+      [AgentsDesktop.Native]::SaveTestDocument($windowId,$exe,[string]$request.document.path,[string]$request.document.name,[string]$command.elementId,[string]$request.document.expectedText)
+      Start-Sleep -Milliseconds 100
+      $window = [AgentsDesktop.Native]::Observe($windowId,$exe)
+      $verification = 'Save dispatched once to the registered document; independent server file read-back is still required.'
+    } else {
     $action = $command.action
     $target = $null
     if ($action.kind -ne 'focus') {
@@ -93,8 +112,10 @@ try {
     } while (-not $ok -and [DateTime]::UtcNow -lt $deadline)
     if (-not $ok) { throw 'Input dispatched, but its postcondition was not verified. Do not repeat blindly; observe again.' }
     $verification = "Windows $($action.kind) dispatched once; postcondition independently observed through UI Automation/Win32."
+    }
   } elseif ($command.kind -eq 'launch') {
     $verification = 'Started the exact allowlisted executable without arguments and verified its process and visible window.'
+    if ($request.document) { $verification = 'Started exact Notepad with one registered disposable file; verified its process and document title.' }
   }
   Write-Stage 'capture-window'
   $png = [AgentsDesktop.Native]::Capture($windowId, $exe)

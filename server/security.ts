@@ -52,6 +52,35 @@ export async function scopedPath(root: string, name: string): Promise<string> {
     target = resolve(base, name);
   if (!target.startsWith(base + sep))
     throw new Error("Path escapes the authorized workspace.");
+  const parts = name.split("/");
+  if (
+    [...name].some(
+      (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+    ) ||
+    /[:*?"<>|]/.test(name) ||
+    parts.some(
+      (part) =>
+        !part ||
+        part === "." ||
+        part === ".." ||
+        /[. ]$/.test(part) ||
+        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part),
+    )
+  )
+    throw new Error(
+      "Workspace path contains an unsafe or nonportable filename.",
+    );
+  if (
+    parts.some(
+      (part) =>
+        /^(?:\.env(?:\..*)?|\.git|\.ssh|\.aws|\.npmrc|\.netrc|\.pypirc|credentials(?:[._-].*)?|client_secret.*|service[-_]account.*)$/i.test(
+          part,
+        ) || /\.(?:pem|key|p12|pfx|kdbx)$/i.test(part),
+    )
+  )
+    throw new Error(
+      "Sensitive credential/configuration paths are not accessible to workspace tools.",
+    );
   let current = target;
   while (current !== base) {
     try {

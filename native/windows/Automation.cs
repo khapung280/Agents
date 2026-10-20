@@ -23,6 +23,7 @@ namespace AgentsDesktop {
     public Element[] elements;
   }
   public static class Native {
+    static string protectedDocumentName;
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public UIntPtr extra; }
@@ -84,6 +85,41 @@ namespace AgentsDesktop {
     static bool Valid(Box r) { return !Double.IsInfinity(r.x) && !Double.IsNaN(r.x) && r.width > 0 && r.height > 0; }
     static string Id(AutomationElement e) { return String.Join(".", e.GetRuntimeId()); }
     static string Truncate(string s) { return s == null ? "" : s.Substring(0, Math.Min(2000, s.Length)); }
+    static string ReadValue(AutomationElement e) {
+      if (e.Current.IsPassword) return null;
+      object pattern;
+      if (e.TryGetCurrentPattern(ValuePattern.Pattern, out pattern)) return Truncate(((ValuePattern)pattern).Current.Value);
+      if ((e.Current.ControlType == ControlType.Edit || e.Current.ControlType == ControlType.Document) && e.TryGetCurrentPattern(TextPattern.Pattern, out pattern))
+        return Truncate(((TextPattern)pattern).DocumentRange.GetText(2001));
+      return null;
+    }
+    public static void ValidateTestFile(string path, string name) {
+      if (!System.Text.RegularExpressions.Regex.IsMatch(name, "^agents-[a-f0-9-]{36}\\.txt$") || Path.GetFileName(path) != name || !File.Exists(path)) throw new Exception("Invalid registered test file.");
+      FileInfo file = new FileInfo(path);
+      if (file.Length > 4096 || file.Directory.Name != name.Substring(7,36) || file.Directory.Parent.Name != "notepad-tests") throw new Exception("Test file is outside its registered directory.");
+      if ((file.Attributes & FileAttributes.ReparsePoint) != 0) throw new Exception("Test file redirects are prohibited.");
+      for (DirectoryInfo folder = file.Directory; folder != null; folder = folder.Parent)
+        if ((folder.Attributes & FileAttributes.ReparsePoint) != 0) throw new Exception("Test directory redirects are prohibited.");
+    }
+    public static void ValidateTestDocument(long handle, string executable, string path, string name, string elementId, string expectedText) {
+      if (!String.Equals(Path.GetFileName(executable), "notepad.exe", StringComparison.OrdinalIgnoreCase)) throw new Exception("Test document requires Notepad.");
+      ValidateTestFile(path,name);
+      Window window = Observe(handle,executable);
+      if (window.title.IndexOf(name,StringComparison.Ordinal) < 0) throw new Exception("Registered document title is not active.");
+      if (!String.IsNullOrEmpty(elementId)) {
+        AutomationElement e = Target(new IntPtr(handle),elementId);
+        if ((e.Current.ControlType != ControlType.Edit && e.Current.ControlType != ControlType.Document) || ReadValue(e) != expectedText) throw new Exception("Registered editor contents changed.");
+      }
+      protectedDocumentName = name;
+    }
+    public static void SaveTestDocument(long handle, string executable, string path, string name, string elementId, string text) {
+      ValidateTestDocument(handle,executable,path,name,elementId,text);
+      if (new FileInfo(path).Length != 0) throw new Exception("Test file changed before save; refusing overwrite.");
+      IntPtr hwnd = new IntPtr(handle); AutomationElement e = Target(hwnd,elementId);
+      if (!e.Current.HasKeyboardFocus) throw new Exception("Registered editor lost keyboard focus.");
+      Foreground(hwnd);
+      Send(new INPUT[] { Key(17,0,0),Key(83,0,0),Key(83,0,2),Key(17,0,2) });
+    }
     static List<AutomationElement> Nodes(IntPtr hwnd) {
       // Bound traversal; stop at password controls rather than traversing their children.
       List<AutomationElement> result = new List<AutomationElement>();
@@ -122,14 +158,16 @@ namespace AgentsDesktop {
           if (e.Current.IsOffscreen || e.Current.ProcessId != p.Id) continue;
           Box b = Bounds(e.Current.BoundingRectangle); if (!Valid(b)) continue;
           bool secret = e.Current.IsPassword;
-          string value = null; object pattern;
-          if (!secret && e.TryGetCurrentPattern(ValuePattern.Pattern, out pattern)) value = Truncate(((ValuePattern)pattern).Current.Value);
+          string value = ReadValue(e);
           elements.Add(new Element { id=Id(e), name=secret ? "[protected]" : Truncate(e.Current.Name), controlType=e.Current.ControlType.ProgrammaticName, value=value, password=secret, enabled=e.Current.IsEnabled, focused=e.Current.HasKeyboardFocus, bounds=b });
         }
         return new Window { windowId=handle.ToString(), processId=p.Id, processStartedAt=p.StartTime.ToUniversalTime().ToString("o"), executable=p.MainModule.FileName, title=Truncate(AutomationElement.FromHandle(hwnd).Current.Name), foreground=GetForegroundWindow()==hwnd, bounds=new Box { x=rect.Left,y=rect.Top,width=rect.Right-rect.Left,height=rect.Bottom-rect.Top }, elements=elements.ToArray() };
       }
     }
-    static void Foreground(IntPtr hwnd) { CheckDesktop(); if (GetForegroundWindow()!=hwnd) throw new Exception("Foreground changed. Input refused; observe again."); }
+    static void Foreground(IntPtr hwnd) {
+      CheckDesktop(); if (GetForegroundWindow()!=hwnd) throw new Exception("Foreground changed. Input refused; observe again.");
+      if (protectedDocumentName != null && AutomationElement.FromHandle(hwnd).Current.Name.IndexOf(protectedDocumentName,StringComparison.Ordinal) < 0) throw new Exception("Active test document changed; input refused.");
+    }
     static POINT Center(IntPtr hwnd, AutomationElement e) {
       System.Windows.Rect b=e.Current.BoundingRectangle;
       POINT point=new POINT { X=(int)(b.X+b.Width/2),Y=(int)(b.Y+b.Height/2) };

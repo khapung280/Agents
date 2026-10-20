@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../server/store.js";
@@ -191,7 +191,7 @@ test("workspace tools reject credential files and Windows device/alternate-strea
       await assert.rejects(scopedPath(root, name), /unsafe/, name);
     assert.equal(
       await scopedPath(root, "notes/योजना.txt"),
-      join(root, "notes/योजना.txt"),
+      join(await realpath(root), "notes/योजना.txt"),
     );
   });
 });

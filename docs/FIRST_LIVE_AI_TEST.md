@@ -2,6 +2,8 @@
 
 Prepared on 19 October 2026 (Asia/Katmandu) against source `0ec1844fa0917dd310e17f2d8e6ce0cdcb738902`. No live API request, Windows capture, screen upload, or PC input was performed. The current installer remains the [verified build of that commit](https://github.com/khapung280/Agents/actions/runs/39239836715). This preparation does not require a new installer.
 
+Current offline follow-up (20 October 2026): the expanded registry at `1dff113` was rechecked with the same intercepted preflight, with **zero live requests, captures or PC actions**. It now measures **5,430 request bytes**, **9,526 conservative input tokens** and **1,024 maximum output tokens**. Use `(9526 × input_rate + 1024 × output_rate) / 1,000,000` with newly verified rates; the historical measurements below are not the current reservation. Model/pricing/account checks and explicit budget approval remain pending. See [API-independent completion](OFFLINE_COMPLETION.md) for the current implementation and device-testing limits.
+
 ## Configuration audit
 
 | Item                         | Observed in this cloud environment                                                                             | Requirement before a live test                                                                                                                          |

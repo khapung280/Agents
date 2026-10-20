@@ -55,7 +55,7 @@ The owner explicitly approved both designs below in chat for implementation and 
 
 Cloud backend tests exercise all ten existing identities: seven real local specialist tools, Browser/Research/Marketing worker contracts with explicit source fixtures, and all ten identities delegating through the same Computer approval boundary. Real Chromium tests cover rendered navigation and approved interactions against deterministic intercepted pages; real Electron tests exercise the installed-runtime path with Electron-as-Node. Native transport and provider responses in tests are explicitly simulated.
 
-The final report records the exact completed test counts and GitHub Actions run. Native compilation and installer checksum verification in Windows CI do not establish interactive Notepad support. The owner's prior disposable-fixture PASS does not verify these new Notepad steps.
+The cloud checks passed 87 backend tests, 18 browser checks, typecheck, lint, production build and Electron smoke (including real sample tests under Electron-as-Node). The first Windows CI run found one test-only mismatch between a temporary directory's short Windows name and its canonical name: 86 passed, one failed. The assertion was corrected to compare the canonical root; no path protection was relaxed. The final report records the completed Windows rerun and artifact verification. Native compilation and installer checksum verification in Windows CI do not establish interactive Notepad support. The owner's prior disposable-fixture PASS does not verify these new Notepad steps.
 
 Remaining API-independent acceptance is device-specific: this installer on Windows 11, the disposable native fixture, actual Notepad launch/focus/type/save (including process handoff/tab behavior), DPI/lock/stop behavior, microphone/speech output, and target-hardware animation performance. Unsupported/ambiguous UIA evidence stops the new workflow; it never guesses, switches to Save As, bypasses focus protections, or enables general shell execution.
 
@@ -95,6 +95,7 @@ Only after the API-independent work and available acceptance checks are complete
 - `client/voice-policy.ts`
 - `client/voice.ts`
 - `docs/AGENTS.md`
+- `docs/FIRST_LIVE_AI_TEST.md`
 - `docs/OFFLINE_COMPLETION.md`
 - `docs/VERIFICATION.md`
 - `docs/WINDOWS_CONTROL.md`

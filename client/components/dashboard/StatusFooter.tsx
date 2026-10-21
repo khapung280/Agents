@@ -1,5 +1,6 @@
 import { Square, ShieldCheck } from "lucide-react";
 import { api } from "../../api";
+import { version } from "../../../package.json";
 
 import type { DashboardProps } from "./types";
 
@@ -14,7 +15,7 @@ export function StatusFooter({
         LOCAL-FIRST · OWNER-CONTROLLED
       </span>
       <span>
-        AGENTS OS <b>v0.1</b>
+        AGENTS OS <b>v{version}</b>
         <i />
         Tool evidence and permissions visible
       </span>

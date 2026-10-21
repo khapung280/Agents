@@ -32,18 +32,32 @@ try {
     }
     # The worker process override must not propagate to the launched application.
     $start.EnvironmentVariables.Remove('PSExecutionPolicyPreference')
+    $previousHandles = @()
+    if ($request.document) { $previousHandles = [AgentsDesktop.Native]::SnapshotWindowHandles() }
     Write-Stage 'launch-application'
     $process = [Diagnostics.Process]::Start($start)
     if (-not $process) { throw 'Application did not start.' }
     Write-Stage 'wait-window'
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    $handoffReported = $false
     do {
       Start-Sleep -Milliseconds 100
       $process.Refresh()
-      if ($process.HasExited) { throw 'Launched process exited or handed off to another process. Observe the application manually before continuing.' }
-      $windowId = $process.MainWindowHandle.ToInt64()
+      if ($request.document) {
+        if ($process.HasExited -and -not $handoffReported) {
+          Write-Stage 'launcher-exited-awaiting-authorized-document-handoff'
+          $handoffReported = $true
+        }
+        $windowId = [AgentsDesktop.Native]::FindNewTestWindow($exe,[string]$request.document.path,[string]$request.document.name,[long[]]$previousHandles)
+      } else {
+        if ($process.HasExited) { throw 'Launched process exited or handed off without a registered document identity. No window guessing is permitted.' }
+        $windowId = $process.MainWindowHandle.ToInt64()
+      }
     } while ($windowId -eq 0 -and [DateTime]::UtcNow -lt $deadline)
-    if ($windowId -eq 0) { throw 'No window appeared for the launched process.' }
+    if ($windowId -eq 0) {
+      if ($request.document) { throw 'No new isolated document window appeared for the exact authorized Notepad executable within 10 seconds. Review the actual WindowsApps editor path and new-window preference. Launch was not retried.' }
+      throw 'No window appeared for the launched process.'
+    }
   } elseif ($command.kind -eq 'observe') {
     if ($command.windowId) { $windowId = [long]::Parse($command.windowId) }
     else { $windowId = [AgentsDesktop.Native]::FindWindow($exe) }
@@ -115,7 +129,7 @@ try {
     }
   } elseif ($command.kind -eq 'launch') {
     $verification = 'Started the exact allowlisted executable without arguments and verified its process and visible window.'
-    if ($request.document) { $verification = 'Started exact Notepad with one registered disposable file; verified its process and document title.' }
+    if ($request.document) { $verification = 'Launched once; associated one new isolated registered-document window with the exact authorized Notepad editor. Verified actual editor process identity and empty contents; existing windows/tabs were excluded.' }
   }
   Write-Stage 'capture-window'
   $png = [AgentsDesktop.Native]::Capture($windowId, $exe)

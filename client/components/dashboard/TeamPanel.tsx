@@ -1,16 +1,21 @@
 import { ArrowUpRight } from "lucide-react";
 
 import { AgentIcon } from "../Primitives";
+import { deriveAgentVisual } from "../../coreState";
 
 import type { DashboardProps } from "./types";
 
 export function TeamPanel({
   s,
+  connected,
   clock,
   active,
   openAgent,
   setView,
-}: Pick<DashboardProps, "s" | "clock" | "active" | "openAgent" | "setView">) {
+}: Pick<
+  DashboardProps,
+  "s" | "connected" | "clock" | "active" | "openAgent" | "setView"
+>) {
   return (
     <section className="team-panel panel">
       <div className="panel-title">
@@ -32,16 +37,16 @@ export function TeamPanel({
           <br />A team to execute.
         </h2>
         <p>
-          {active.length
-            ? `${active.length} workflow${active.length > 1 ? "s" : ""} in progress. You're in control.`
-            : "Your workspace is quiet. Give your team its next mission."}
+          {!connected
+            ? "Connection interrupted. Execution status is unavailable."
+            : active.length
+              ? `${active.length} workflow${active.length > 1 ? "s" : ""} in progress. You're in control.`
+              : "Your workspace is quiet. Give your team its next mission."}
         </p>
       </div>
       <div className="team-list">
         {s.agents.map((a) => {
-          const running = s.tasks.some(
-            (t) => !t.workflow && t.agent === a.id && t.state === "running",
-          );
+          const indicator = deriveAgentVisual(s, a.id, connected);
           return (
             <button
               key={a.id}
@@ -54,14 +59,10 @@ export function TeamPanel({
               <span>
                 <strong>{a.name}</strong>
                 <small>
-                  {!s.policy.agents[a.id]
-                    ? "Paused"
-                    : running
-                      ? "Executing task"
-                      : a.role}
+                  {indicator.phase === "idle" ? a.role : indicator.label}
                 </small>
               </span>
-              <i className={`agent-dot ${running ? "running" : ""}`} />
+              <i className={`agent-dot ${indicator.active ? "running" : ""}`} />
             </button>
           );
         })}

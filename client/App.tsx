@@ -408,6 +408,7 @@ function CommandCenter({
           <div className="dashboard-grid">
             <TeamPanel
               s={s}
+              connected={connected}
               clock={clock}
               active={active}
               openAgent={openAgent}

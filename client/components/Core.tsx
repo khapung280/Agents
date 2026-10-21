@@ -7,9 +7,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { CoreState } from "../../shared/contracts";
+import {
+  blinkOpenness,
+  damp,
+  faceAudioLevel,
+  faceProfiles,
+  frameSample,
+  type FaceMetrics,
+} from "../faceAnimation";
 
 const palette: Record<CoreState, string> = {
   idle: "#49bef5",
@@ -74,17 +82,35 @@ function Face({
   quality,
   level,
   reduced,
+  animate,
+  preview,
 }: {
   state: CoreState;
   quality: string;
   level: number;
   reduced: boolean;
+  animate: boolean;
+  preview: boolean;
 }) {
   const group = useRef<THREE.Group>(null),
     rings = useRef<THREE.Group>(null),
     mouth = useRef<THREE.Mesh>(null),
     leftEye = useRef<THREE.Mesh>(null),
-    rightEye = useRef<THREE.Mesh>(null);
+    rightEye = useRef<THREE.Mesh>(null),
+    leftLid = useRef<THREE.Group>(null),
+    rightLid = useRef<THREE.Group>(null),
+    particleField = useRef<THREE.Points>(null),
+    scan = useRef<THREE.Mesh>(null),
+    light = useRef<THREE.PointLight>(null);
+  const time = useRef(0);
+  const pointer = useRef({ x: 0, y: 0 });
+  const motion = useRef({
+    ...faceProfiles[state],
+    audio: 0,
+    scanTime: 0,
+    pulseTime: 0,
+  });
+  const targetColor = useMemo(() => new THREE.Color(palette[state]), [state]);
   const geometry = useMemo(
     () => faceGeometry(quality === "high" ? 100 : 55),
     [quality],
@@ -175,6 +201,8 @@ function Face({
       uTime: { value: 0 },
       uColor: { value: new THREE.Color(palette[state]) },
       uActivity: { value: 0 },
+      uEnergy: { value: 0.14 },
+      uScan: { value: 0.5 },
     }),
     [],
   );
@@ -193,46 +221,103 @@ function Face({
     [contours, ticks],
   );
   useFrame((s, delta) => {
-    const t = s.clock.elapsedTime;
-    const active = [
-      "thinking",
-      "planning",
-      "delegating",
-      "executing",
-      "observing",
-      "verifying",
-    ].includes(state);
-    uniforms.uColor.value.lerp(
-      new THREE.Color(palette[state]),
-      Math.min(1, delta * 4),
-    );
-    uniforms.uTime.value = reduced ? 0 : t;
-    uniforms.uActivity.value = level;
-    if (group.current) {
-      group.current.rotation.y = THREE.MathUtils.lerp(
-        group.current.rotation.y,
-        reduced ? 0 : Math.sin(t * 0.22) * 0.1 + s.pointer.x * 0.1,
-        0.03,
-      );
-      group.current.rotation.x = THREE.MathUtils.lerp(
-        group.current.rotation.x,
-        -s.pointer.y * 0.06,
-        0.03,
-      );
-      group.current.position.y = reduced ? 0 : Math.sin(t * 0.7) * 0.025;
+    // Time is local to active rendering; resume never jumps by hidden elapsed time.
+    const dt = animate ? Math.min(delta, 0.1) : 0;
+    if (animate) {
+      time.current += dt;
+      pointer.current.x = s.pointer.x;
+      pointer.current.y = s.pointer.y;
     }
-    if (rings.current && !reduced)
-      rings.current.rotation.z += delta * (active ? 0.11 : 0.025);
+    const t = reduced ? 0 : time.current;
+    const profile = faceProfiles[state];
+    const m = motion.current;
+    for (const key of Object.keys(profile) as (keyof typeof profile)[])
+      m[key] = reduced ? profile[key] : damp(m[key], profile[key], 3, dt);
+    m.audio = reduced
+      ? 0
+      : damp(m.audio, faceAudioLevel(state, level, preview, t), 13, dt);
+    m.scanTime += dt * m.scan;
+    m.pulseTime += dt * m.pulse;
+    uniforms.uColor.value.lerp(
+      targetColor,
+      !animate ? 1 : 1 - Math.exp(-dt * 4),
+    );
+    uniforms.uTime.value = t;
+    uniforms.uActivity.value = m.audio;
+    uniforms.uEnergy.value = m.energy;
+    uniforms.uScan.value = reduced ? 0 : m.scanTime;
+    if (group.current) {
+      group.current.rotation.y = reduced
+        ? 0
+        : damp(
+            group.current.rotation.y,
+            Math.sin(t * 0.22) * 0.085 + pointer.current.x * 0.085,
+            2,
+            dt,
+          );
+      group.current.rotation.x = reduced
+        ? 0
+        : damp(
+            group.current.rotation.x,
+            Math.sin(t * 0.31) * 0.017 - pointer.current.y * 0.045 + m.tilt,
+            2,
+            dt,
+          );
+      group.current.rotation.z = reduced ? 0 : Math.sin(t * 0.17) * 0.012;
+      group.current.position.y = reduced ? 0 : Math.sin(t * 0.7) * 0.026;
+      group.current.scale.setScalar(
+        reduced ? 1 : 1 + Math.sin(t * 0.7) * 0.003,
+      );
+    }
+    if (rings.current && animate) rings.current.rotation.z += dt * m.ring;
+    if (particleField.current) {
+      particleField.current.rotation.z = reduced ? 0 : t * 0.012;
+      particleField.current.rotation.y = reduced
+        ? 0
+        : Math.sin(t * 0.13) * 0.12;
+    }
+    if (scan.current) {
+      scan.current.position.y = reduced
+        ? 0.3
+        : Math.sin(m.scanTime * 0.6) * 1.65;
+      (scan.current.material as THREE.MeshBasicMaterial).opacity = reduced
+        ? 0.06
+        : 0.035 + m.energy * 0.075;
+    }
+    if (light.current) {
+      light.current.color.copy(uniforms.uColor.value);
+      light.current.intensity =
+        12 + m.audio * 5 + (reduced ? 0 : Math.sin(m.pulseTime) * m.energy * 2);
+    }
     if (mouth.current)
-      mouth.current.scale.y = 0.14 * (state === "speaking" ? 1 + level * 3 : 1);
-    const blink = reduced ? 1 : t % 6 < 0.14 ? 0.15 : 1;
-    if (leftEye.current) leftEye.current.scale.y = blink;
-    if (rightEye.current) rightEye.current.scale.y = blink;
+      mouth.current.scale.y =
+        0.14 * (1 + (state === "speaking" ? m.audio * 3 : 0));
+    const blink = reduced ? 1 : blinkOpenness(t);
+    for (const eye of [leftEye.current, rightEye.current]) {
+      if (!eye) continue;
+      eye.scale.y = blink;
+      eye.position.x = reduced
+        ? 0
+        : Math.sin(t * 0.4) * 0.017 * m.gaze + pointer.current.x * 0.013;
+      eye.position.y = reduced
+        ? 0
+        : Math.sin(t * 0.27) * 0.008 + pointer.current.y * 0.009;
+    }
+    for (const lid of [leftLid.current, rightLid.current])
+      if (lid) {
+        lid.scale.y = blink;
+        lid.position.y = (reduced ? 0 : Math.sin(t * 0.53) * 0.002) + m.brow;
+      }
   });
   return (
     <group>
       <ambientLight intensity={0.4} />
-      <pointLight position={[2, 3, 4]} intensity={14} color="#69d5ff" />
+      <pointLight
+        ref={light}
+        position={[2, 3, 4]}
+        intensity={14}
+        color="#69d5ff"
+      />
       <pointLight position={[-2, 1, 2]} intensity={4} color="#806ee6" />
       <group ref={group} position={[0, 0.05, 0]}>
         <mesh geometry={geometry}>
@@ -263,7 +348,7 @@ function Face({
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             uniforms={uniforms}
-            vertexShader={`uniform float uTime; uniform float uActivity; varying float vLight; void main(){vec3 p=position; vLight=.35+.65*pow(.5+.5*sin(p.y*12.-uTime*1.4+p.x*5.),3.); vec4 mv=modelViewMatrix*vec4(p,1.); gl_Position=projectionMatrix*mv; gl_PointSize=(1.4+vLight*.9+uActivity)* (5./-mv.z);}`}
+            vertexShader={`uniform float uTime; uniform float uActivity; uniform float uEnergy; uniform float uScan; varying float vLight; void main(){vec3 p=position; p.z += sin(p.y*5.+uTime*.7)*sin(p.x*4.-uTime*.3)*.008*(.4+uEnergy); vLight=.35+.65*pow(.5+.5*sin(p.y*12.-uScan+p.x*5.),3.); vec4 mv=modelViewMatrix*vec4(p,1.); gl_Position=projectionMatrix*mv; gl_PointSize=(1.4+vLight*.9+uActivity)* (5./-mv.z);}`}
             fragmentShader={`uniform vec3 uColor; varying float vLight; void main(){float d=length(gl_PointCoord-.5);if(d>.5)discard;gl_FragColor=vec4(uColor,(1.-d*2.)*(.42+vLight*.58));}`}
           />
         </points>
@@ -289,25 +374,37 @@ function Face({
                 toneMapped={false}
               />
             </mesh>
-            <mesh scale={[1, 0.28, 1]}>
-              <torusGeometry args={[0.19, 0.009, 8, 48]} />
-              <meshBasicMaterial
-                color={palette[state]}
-                transparent
-                opacity={0.9}
-              />
-            </mesh>
-            <mesh scale={[1, 0.25, 1]}>
-              <circleGeometry args={[0.16, 32]} />
-              <meshBasicMaterial
-                color={palette[state]}
-                transparent
-                opacity={0.14}
-                side={THREE.DoubleSide}
-              />
-            </mesh>
+            <group ref={side === -1 ? leftLid : rightLid}>
+              <mesh scale={[1, 0.28, 1]}>
+                <torusGeometry args={[0.19, 0.009, 8, 48]} />
+                <meshBasicMaterial
+                  color={palette[state]}
+                  transparent
+                  opacity={0.9}
+                />
+              </mesh>
+              <mesh scale={[1, 0.25, 1]}>
+                <circleGeometry args={[0.16, 32]} />
+                <meshBasicMaterial
+                  color={palette[state]}
+                  transparent
+                  opacity={0.14}
+                  side={THREE.DoubleSide}
+                />
+              </mesh>
+            </group>
           </group>
         ))}
+        <mesh ref={scan} position={[0, 0.3, 0.9]}>
+          <planeGeometry args={[2.4, 0.013]} />
+          <meshBasicMaterial
+            color={palette[state]}
+            transparent
+            opacity={0.06}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
         <mesh ref={mouth} position={[0, -0.65, 0.69]} scale={[1, 0.14, 1]}>
           <torusGeometry args={[0.26, 0.008, 6, 48, Math.PI * 2]} />
           <meshBasicMaterial color={palette[state]} transparent opacity={0.8} />
@@ -347,14 +444,14 @@ function Face({
           />
         </lineSegments>
       </group>
-      <points geometry={particles}>
-        <pointsMaterial
-          color={palette[state]}
-          size={0.013}
+      <points ref={particleField} geometry={particles}>
+        <shaderMaterial
           transparent
-          opacity={0.35}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
+          uniforms={uniforms}
+          vertexShader={`uniform float uTime; uniform float uActivity; varying float vLight; void main(){vec3 p=position; p.y+=sin(p.x*2.+uTime*.35)*.035; p.x+=cos(p.y*2.+uTime*.22)*.025; vLight=.35+.3*sin(p.z*3.+uTime*.8)+uActivity*.35; vec4 mv=modelViewMatrix*vec4(p,1.); gl_Position=projectionMatrix*mv; gl_PointSize=(1.2+uActivity)*5./-mv.z;}`}
+          fragmentShader={`uniform vec3 uColor; varying float vLight; void main(){float d=length(gl_PointCoord-.5);if(d>.5)discard;gl_FragColor=vec4(uColor,(1.-d*2.)*vLight);}`}
         />
       </points>
     </group>
@@ -380,18 +477,82 @@ class RenderBoundary extends Component<
     );
   }
 }
-function FrameBudget({ onSlow }: { onSlow: () => void }) {
-  const budget = useRef({ seconds: 0, frames: 0, reported: false });
-  useFrame((_state, delta) => {
-    const b = budget.current;
-    if (b.reported || delta > 1) return;
-    b.seconds += delta;
-    b.frames++;
-    if (b.seconds > 3) {
-      b.reported = true;
-      if (b.frames / b.seconds < 35) onSlow();
-    }
+function FrameDriver({ active, capped }: { active: boolean; capped: boolean }) {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    if (!active) return;
+    let id = 0,
+      last = 0;
+    const frame = (now: number) => {
+      if (!capped || now - last >= 1000 / 30 - 0.5) {
+        invalidate();
+        last = now;
+      }
+      id = requestAnimationFrame(frame);
+    };
+    id = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(id);
+  }, [active, capped, invalidate]);
+  return null;
+}
+function RenderMeasurements({
+  active,
+  quality,
+  capped,
+  renderer,
+  onMetrics,
+  onSlow,
+}: {
+  active: boolean;
+  quality: string;
+  capped: boolean;
+  renderer: string;
+  onMetrics?: (metrics: FaceMetrics) => void;
+  onSlow: () => void;
+}) {
+  const counts = useRef({
+    frames: 0,
+    previous: 0,
+    start: 0,
+    intervals: [] as number[],
+    slow: 0,
   });
+  useEffect(() => {
+    const c = counts.current;
+    c.previous = 0;
+    c.start = 0;
+    c.intervals = [];
+    c.slow = 0;
+  }, [active, quality, capped]);
+  useFrame(({ gl, scene, camera }) => {
+    // A positive render priority makes this the actual render boundary. Metrics
+    // are read after this draw, not inferred from task activity or a timer.
+    gl.render(scene, camera);
+    if (!active) return;
+    const c = counts.current,
+      now = performance.now();
+    c.frames++;
+    if (c.previous) c.intervals.push(now - c.previous);
+    c.previous = now;
+    if (!c.start) c.start = now;
+    if (now - c.start < 2000 || !c.intervals.length) return;
+    const sample = frameSample(c.intervals);
+    onMetrics?.({
+      ...sample,
+      frames: c.frames,
+      drawCalls: gl.info.render.calls,
+      triangles: gl.info.render.triangles,
+      points: gl.info.render.points,
+      renderer,
+      quality,
+      capped,
+    });
+    if (!capped && sample.fps < 35) c.slow++;
+    else c.slow = 0;
+    if (c.slow >= 2) onSlow();
+    c.start = now;
+    c.intervals = [];
+  }, 1);
   return null;
 }
 export function Core(props: {
@@ -400,15 +561,25 @@ export function Core(props: {
   level: number;
   reduced: boolean;
   paused: boolean;
+  preview?: boolean;
+  onMetrics?: (metrics: FaceMetrics) => void;
 }) {
   const [effectiveQuality, setEffectiveQuality] = useState(props.quality);
-  useEffect(() => setEffectiveQuality(props.quality), [props.quality]);
+  const [software, setSoftware] = useState(false);
+  const [slow, setSlow] = useState(false);
+  const [renderer, setRenderer] = useState("Renderer information unavailable");
+  useEffect(() => {
+    setEffectiveQuality(software ? "performance" : props.quality);
+    setSlow(false);
+  }, [props.quality, software]);
   const [visible, setVisible] = useState(!document.hidden);
   useEffect(() => {
     const handler = () => setVisible(!document.hidden);
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
+  const active = visible && !props.paused && !props.reduced;
+  const capped = software || slow || effectiveQuality === "performance";
   return (
     <RenderBoundary>
       <Suspense
@@ -423,25 +594,33 @@ export function Core(props: {
           onCreated={({ gl }) => {
             const context = gl.getContext();
             const debug = context.getExtension("WEBGL_debug_renderer_info");
-            if (
-              debug &&
-              /swiftshader|llvmpipe|softpipe/i.test(
-                String(context.getParameter(debug.UNMASKED_RENDERER_WEBGL)),
-              )
-            )
-              setEffectiveQuality("performance");
+            const name = debug
+              ? String(context.getParameter(debug.UNMASKED_RENDERER_WEBGL))
+              : String(context.getParameter(context.RENDERER));
+            setRenderer(name);
+            setSoftware(/swiftshader|llvmpipe|softpipe/i.test(name));
           }}
-          frameloop={
-            !visible || props.paused || props.reduced ? "demand" : "always"
-          }
-          gl={{
-            alpha: true,
-            antialias: props.quality === "high",
-            powerPreference: "low-power",
-          }}
+          frameloop="demand"
+          gl={{ alpha: true, antialias: false, powerPreference: "low-power" }}
         >
-          <FrameBudget onSlow={() => setEffectiveQuality("performance")} />
-          <Face {...props} quality={effectiveQuality} />
+          <FrameDriver active={active} capped={capped} />
+          <Face
+            {...props}
+            preview={props.preview ?? false}
+            animate={active}
+            quality={effectiveQuality}
+          />
+          <RenderMeasurements
+            active={active}
+            quality={effectiveQuality}
+            capped={capped}
+            renderer={renderer}
+            onMetrics={props.onMetrics}
+            onSlow={() => {
+              setEffectiveQuality("performance");
+              setSlow(true);
+            }}
+          />
         </Canvas>
       </Suspense>
     </RenderBoundary>

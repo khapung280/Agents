@@ -8,7 +8,11 @@ permissions:
 jobs:
   package:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -120,7 +124,7 @@ jobs:
         run: |
           $compiler = $env:AGENTS_NSIS_COMPILER
           if (!$compiler -or !(Test-Path -LiteralPath $compiler -PathType Leaf)) { throw 'Verified NSIS compiler is unavailable.' }
-          $compilerOutput = & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" installer/agents.nsi 2>&1
+          $compilerOutput = & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" "/DAPP_VERSION=$((Get-Content package.json -Raw | ConvertFrom-Json).version)" installer/agents.nsi 2>&1
           $compilerExit = $LASTEXITCODE
           $compilerOutput | ForEach-Object { Write-Host $_ }
           if ($compilerExit -ne 0) {
@@ -136,6 +140,24 @@ jobs:
           $hash = (Get-FileHash $installer -Algorithm SHA256).Hash
           $hash | Set-Content "$installer.sha256" -Encoding ascii
           Write-Host "Installer SHA-256: $hash"
+      - name: Verify isolated installation, recovery boundaries and data preservation
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-windows-installer.ps1
+      - name: Prepare versioned release manifest
+        run: node scripts/release-assets.mjs prepare
+      - name: Authenticate release manifest with GitHub build provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: artifacts/windows/agents-update.json
+      - name: Verify actual signed release with the production updater
+        shell: pwsh
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          Copy-Item -LiteralPath $env:ATTESTATION_BUNDLE -Destination artifacts/windows/agents-update.sigstore.json
+          node scripts/release-assets.mjs verify
+          if ($LASTEXITCODE -ne 0) { throw 'Production update provenance verification failed.' }
       - name: Upload Windows installer
         id: upload
         uses: actions/upload-artifact@v4
@@ -145,6 +167,8 @@ jobs:
             artifacts/windows/Ultimate-Agents-Both-Setup.exe
             artifacts/windows/package-info.json
             artifacts/windows/Ultimate-Agents-Both-Setup.exe.sha256
+            artifacts/windows/agents-update.json
+            artifacts/windows/agents-update.sigstore.json
           if-no-files-found: error
           compression-level: 0
       - name: Download uploaded installer for verification
@@ -166,6 +190,8 @@ jobs:
           if ($expected -notmatch '^[0-9A-Fa-f]{64}$' -or $actual -ne $expected -or $actual -ne $builtHash) {
             throw 'Uploaded/downloaded installer checksum verification failed.'
           }
+          node scripts/release-assets.mjs verify $directory
+          if ($LASTEXITCODE -ne 0) { throw 'Downloaded release provenance verification failed.' }
           $info = Get-Content (Join-Path $directory 'package-info.json') -Raw | ConvertFrom-Json
           if ($info.commit -ne $env:GITHUB_SHA -or $info.workingTreeDirty) { throw 'Package source provenance does not match this clean CI commit.' }
           @(

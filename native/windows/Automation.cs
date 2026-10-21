@@ -81,6 +81,66 @@ namespace AgentsDesktop {
       if (windows.Count != 1) throw new Exception("Expected one visible authorized window; specify a windowId. Matching handles: " + String.Join(",", windows));
       return windows[0];
     }
+    public static long[] SnapshotWindowHandles() {
+      List<long> handles = new List<long>();
+      // Include hidden/minimized windows: restoring one must not make it new.
+      EnumWindows(delegate(IntPtr hwnd, IntPtr arg) { handles.Add(hwnd.ToInt64()); return true; }, IntPtr.Zero);
+      return handles.ToArray();
+    }
+    public static bool TestDocumentTitle(string title, string name) {
+      if (title == null || !System.Text.RegularExpressions.Regex.IsMatch(name, "^agents-[a-f0-9-]{36}\\.txt$")) return false;
+      if (title.StartsWith("*", StringComparison.Ordinal)) title = title.Substring(1);
+      return title == name || title == name + " - Notepad";
+    }
+    public static void ValidateIsolatedEditor(Window window, string name, string expectedText) {
+      if (!TestDocumentTitle(window.title, name)) throw new Exception("Registered document title is not active.");
+      int editors = 0, tabs = 0;
+      foreach (Element e in window.elements) {
+        if (e.controlType == "ControlType.TabItem") {
+          tabs++;
+          if (!TestDocumentTitle(e.name, name)) throw new Exception("A personal or unidentified Notepad tab is present.");
+        }
+        if ((e.controlType == "ControlType.Edit" || e.controlType == "ControlType.Document") && e.enabled && !e.password && e.value != null) {
+          editors++;
+          if (e.value != expectedText) throw new Exception("Registered editor contents changed.");
+        }
+      }
+      if (tabs > 1 || editors != 1) throw new Exception("Notepad must expose one isolated document editor and no additional tabs.");
+    }
+    static void ValidateAllTabs(IntPtr hwnd, string name) {
+      int tabs = 0;
+      foreach (AutomationElement e in Nodes(hwnd)) if (e.Current.ControlType == ControlType.TabItem) {
+        tabs++;
+        if (!TestDocumentTitle(e.Current.Name, name)) throw new Exception("A personal or unidentified Notepad tab is present.");
+      }
+      if (tabs > 1) throw new Exception("Additional Notepad tabs are prohibited in a disposable test.");
+    }
+    public static long FindNewTestWindow(string executable, string path, string name, long[] previousHandles) {
+      ValidateTestFile(path, name);
+      HashSet<long> previous = new HashSet<long>(previousHandles);
+      List<long> candidates = new List<long>();
+      bool reused = false;
+      EnumWindows(delegate(IntPtr hwnd, IntPtr arg) {
+        try {
+          using (Process p = ProcessFor(hwnd, executable)) { }
+          if (!TestDocumentTitle(AutomationElement.FromHandle(hwnd).Current.Name, name)) return true;
+          if (previous.Contains(hwnd.ToInt64())) reused = true;
+          else candidates.Add(hwnd.ToInt64());
+        } catch { /* Unavailable or non-authorized windows never become candidates. */ }
+        return true;
+      }, IntPtr.Zero);
+      if (reused) throw new Exception("Notepad reused an existing window. No input was sent. Configure Notepad to open files in a new window, then start a fresh test.");
+      if (candidates.Count > 1) throw new Exception("Multiple new registered document windows appeared; refusing ambiguous handoff.");
+      if (candidates.Count == 0) return 0;
+      Window window = Observe(candidates[0], executable);
+      // Loading UI can briefly have no editor; the caller's deadline remains binding.
+      bool ready = false;
+      foreach (Element e in window.elements) if (e.controlType == "ControlType.Edit" || e.controlType == "ControlType.Document") ready = true;
+      if (!ready) return 0;
+      ValidateIsolatedEditor(window, name, "");
+      ValidateAllTabs(new IntPtr(candidates[0]), name);
+      return candidates[0];
+    }
     static Box Bounds(System.Windows.Rect r) { return new Box { x=r.X, y=r.Y, width=r.Width, height=r.Height }; }
     static bool Valid(Box r) { return !Double.IsInfinity(r.x) && !Double.IsNaN(r.x) && r.width > 0 && r.height > 0; }
     static string Id(AutomationElement e) { return String.Join(".", e.GetRuntimeId()); }
@@ -105,7 +165,8 @@ namespace AgentsDesktop {
       if (!String.Equals(Path.GetFileName(executable), "notepad.exe", StringComparison.OrdinalIgnoreCase)) throw new Exception("Test document requires Notepad.");
       ValidateTestFile(path,name);
       Window window = Observe(handle,executable);
-      if (window.title.IndexOf(name,StringComparison.Ordinal) < 0) throw new Exception("Registered document title is not active.");
+      ValidateIsolatedEditor(window, name, expectedText);
+      ValidateAllTabs(new IntPtr(handle), name);
       if (!String.IsNullOrEmpty(elementId)) {
         AutomationElement e = Target(new IntPtr(handle),elementId);
         if ((e.Current.ControlType != ControlType.Edit && e.Current.ControlType != ControlType.Document) || ReadValue(e) != expectedText) throw new Exception("Registered editor contents changed.");
@@ -166,7 +227,9 @@ namespace AgentsDesktop {
     }
     static void Foreground(IntPtr hwnd) {
       CheckDesktop(); if (GetForegroundWindow()!=hwnd) throw new Exception("Foreground changed. Input refused; observe again.");
-      if (protectedDocumentName != null && AutomationElement.FromHandle(hwnd).Current.Name.IndexOf(protectedDocumentName,StringComparison.Ordinal) < 0) throw new Exception("Active test document changed; input refused.");
+      if (protectedDocumentName != null) {
+        if (!TestDocumentTitle(AutomationElement.FromHandle(hwnd).Current.Name, protectedDocumentName)) throw new Exception("Active test document changed; input refused.");
+      }
     }
     static POINT Center(IntPtr hwnd, AutomationElement e) {
       System.Windows.Rect b=e.Current.BoundingRectangle;
@@ -226,6 +289,10 @@ namespace AgentsDesktop {
     }
     public static string Capture(long handle,string executable) {
       IntPtr hwnd=new IntPtr(handle); Window w=Observe(handle,executable);
+      if (protectedDocumentName != null) {
+        if (!TestDocumentTitle(w.title, protectedDocumentName)) throw new Exception("Active test document changed; capture refused.");
+        ValidateAllTabs(hwnd, protectedDocumentName);
+      }
       if (w.bounds.width>4096 || w.bounds.height>4096 || w.bounds.width*w.bounds.height>12000000) throw new Exception("Window capture exceeds size limits.");
       // PrintWindow captures only this application's surface, never pixels belonging to overlapping apps.
       using (Bitmap image=new Bitmap((int)w.bounds.width,(int)w.bounds.height)) {

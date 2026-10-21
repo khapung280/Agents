@@ -1,4 +1,9 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
+import type { CoreState } from "../../../shared/contracts";
+import { deriveAgentVisual } from "../../coreState";
+import { FaceControls } from "../FaceControls";
+import { faceLabels, type FaceMetrics } from "../../faceAnimation";
+import "../../face.css";
 
 import { ShieldCheck, Pause } from "lucide-react";
 
@@ -32,8 +37,20 @@ export function CommandCore({
   | "notifications"
   | "openAgent"
 >) {
+  const [preview, setPreview] = useState<CoreState | null>(null);
+  const [metrics, setMetrics] = useState<FaceMetrics | null>(null);
+  const paused =
+    visual.paused ||
+    view !== "Dashboard" ||
+    !!newTask ||
+    !!taskId ||
+    notifications;
   return (
-    <section className="core-panel panel">
+    <section
+      className="core-panel panel"
+      data-effects-paused={paused || visual.reduced}
+      data-preview={preview ?? "off"}
+    >
       <header>
         <div>
           <span className="eyebrow">AGENTS — AI COMMAND CORE</span>
@@ -45,6 +62,13 @@ export function CommandCore({
         </div>
       </header>
       <div className="core-stage">
+        {preview !== null && (
+          <div className="face-preview-badge">
+            VISUAL PREVIEW · {faceLabels[preview]}
+            <br />
+            Actual runtime: {faceLabels[coreState]}
+          </div>
+        )}
         <div className="core-grid" />
         <div className="core-halo" />
         <div className="core-cross top-left" />
@@ -56,17 +80,13 @@ export function CommandCore({
             }
           >
             <Core
-              state={coreState}
+              state={preview ?? coreState}
+              preview={preview !== null}
+              onMetrics={setMetrics}
               quality={visual.quality}
               level={voice.level}
               reduced={visual.reduced}
-              paused={
-                visual.paused ||
-                view !== "Dashboard" ||
-                !!newTask ||
-                !!taskId ||
-                notifications
-              }
+              paused={paused}
             />
           </Suspense>
         </div>
@@ -80,15 +100,7 @@ export function CommandCore({
             const side = i < 5 ? -1 : 1,
               row = i % 5,
               y = 80 + row * 88,
-              active =
-                connected &&
-                s.tasks.some(
-                  (t) =>
-                    connected &&
-                    !t.workflow &&
-                    t.agent === a.id &&
-                    t.state === "running",
-                );
+              active = deriveAgentVisual(s, a.id, connected).active;
             return (
               <path
                 key={a.id}
@@ -101,17 +113,13 @@ export function CommandCore({
         </svg>
         <div className="orbit-agents">
           {s.agents.map((a, i) => {
-            const running = s.tasks.filter(
-              (t) =>
-                connected &&
-                !t.workflow &&
-                t.agent === a.id &&
-                t.state === "running",
-            );
+            const indicator = deriveAgentVisual(s, a.id, connected);
             return (
               <button
                 key={a.id}
-                className={`orbit-node ${i < 5 ? "left" : "right"} ${running.length ? "working" : ""}`}
+                className={`orbit-node ${i < 5 ? "left" : "right"} ${indicator.active ? "working" : ""}`}
+                data-phase={indicator.phase}
+                title={indicator.detail || a.name}
                 style={
                   {
                     "--agent-color": a.color,
@@ -126,19 +134,7 @@ export function CommandCore({
                 </span>
                 <span>
                   <strong>{a.name}</strong>
-                  <small>
-                    {running.length
-                      ? `${running.length} executing`
-                      : !connected
-                        ? "OFFLINE"
-                        : s.policy.agents[a.id]
-                          ? ["browser", "research", "marketing"].includes(
-                              a.id,
-                            ) && !s.capabilities.browser
-                            ? "NETWORK REQUIRED"
-                            : "READY"
-                          : "PAUSED"}
-                  </small>
+                  <small>{indicator.label}</small>
                 </span>
               </button>
             );
@@ -171,6 +167,14 @@ export function CommandCore({
           {visual.paused ? "EFFECTS PAUSED" : "LIVE RENDER"}
         </button>
       </div>
+      <FaceControls
+        preview={preview}
+        setPreview={setPreview}
+        runtime={coreState}
+        metrics={metrics}
+        paused={paused}
+        reduced={visual.reduced}
+      />
       <div className="core-footer">
         <span>
           <ShieldCheck size={13} />

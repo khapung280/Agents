@@ -2,6 +2,7 @@ const { app, BrowserWindow, session, dialog } = require("electron");
 const { spawn } = require("node:child_process");
 const { join } = require("node:path");
 const { readFile } = require("node:fs/promises");
+const { attachUpdates } = require("./update-bridge.cjs");
 let service;
 app.setName("ULTIMATE AGENTS — BOTH");
 if (!app.requestSingleInstanceLock()) {
@@ -104,6 +105,7 @@ if (!app.requestSingleInstanceLock()) {
           contextIsolation: true,
           sandbox: true,
           webSecurity: true,
+          preload: join(__dirname, "preload.cjs"),
         },
       });
       win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -111,6 +113,7 @@ if (!app.requestSingleInstanceLock()) {
         if (!url.startsWith(origin + "/")) event.preventDefault();
       });
       debug("window created");
+      await attachUpdates({ win, origin, cookie, directory, service });
       await win.loadURL(origin);
     })
     .catch((error) => {

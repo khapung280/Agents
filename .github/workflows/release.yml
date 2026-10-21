@@ -1,0 +1,37 @@
+name: Publish approved release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Locate the exact successful main-branch Windows build
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/publish-release.mjs locate
+      - uses: actions/download-artifact@v4
+        with:
+          name: Ultimate-Agents-Both-Windows-x64
+          path: artifacts/windows
+          run-id: ${{ steps.build.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Reverify authenticated manifest and installer
+        run: node scripts/release-assets.mjs verify
+      - name: Publish previously approved tag without replacing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/publish-release.mjs publish

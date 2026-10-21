@@ -1,5 +1,5 @@
 import { _electron } from "playwright";
-import { mkdtemp, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
@@ -29,6 +29,14 @@ try {
   const page = await app.firstWindow({ timeout: 20000 });
   await page.waitForSelector(".core-panel", { timeout: 15000 });
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
+  const bridge = await page.evaluate(async () => ({
+    keys: Object.keys(window.agentsUpdates).sort(),
+    status: await window.agentsUpdates.getStatus(),
+  }));
+  assert.deepEqual(bridge.keys, ["cancel", "check", "download", "getStatus", "install", "onStatus"]);
+  assert.equal(bridge.status.currentVersion, JSON.parse(await readFile("package.json", "utf8")).version);
+  assert.equal(bridge.status.phase, "unavailable");
+  console.log("PASS: sandboxed update bridge exposes only fixed verbs and refuses development installation.");
   await promisify(execFile)(child.spawnfile, args, {
     cwd: process.cwd(),
     env: {

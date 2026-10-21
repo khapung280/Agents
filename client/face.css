@@ -1,0 +1,87 @@
+.face-controls {
+  border-top: 1px solid rgba(106, 190, 241, 0.12);
+  padding: 9px 16px 12px;
+  color: #91a7bb;
+  font-size: 11px;
+}
+.face-controls summary {
+  cursor: pointer;
+  color: #a9c5df;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+.face-controls p {
+  margin: 9px 0;
+  line-height: 1.6;
+}
+.face-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  align-items: center;
+}
+.face-control-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.face-control-row select {
+  color: #c8e6ff;
+  background: #0d1a2b;
+  border: 1px solid #26425b;
+  border-radius: 5px;
+  padding: 5px 7px;
+  max-width: 190px;
+}
+.face-preview-notice {
+  color: #e8c48b;
+}
+.face-preview-badge {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 5px 9px;
+  border: 1px solid #755e3d;
+  border-radius: 5px;
+  background: rgba(21, 25, 35, 0.95);
+  color: #e8c48b;
+  font-size: 10px;
+  text-align: center;
+  pointer-events: none;
+}
+.face-metrics {
+  display: grid;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.face-renderer {
+  overflow-wrap: anywhere;
+  color: #7d97ae;
+}
+.orbit-node[data-phase="approval"] .orb-icon {
+  border-color: #d8ae70;
+  box-shadow: 0 0 12px #b4883830;
+}
+.orbit-node[data-phase="error"] .orb-icon {
+  border-color: #e38979;
+  box-shadow: 0 0 12px #db706a25;
+}
+.orbit-node[data-phase="success"] .orb-icon {
+  border-color: #70cfa3;
+}
+.orbit-node[data-phase="verifying"] .orb-icon {
+  border-color: #b2d69b;
+}
+.core-panel[data-effects-paused="true"] .signal.active,
+.core-panel[data-effects-paused="true"] .working .orb-icon {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .core-panel .signal.active,
+  .core-panel .working .orb-icon {
+    animation: none !important;
+  }
+}

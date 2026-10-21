@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { collectWindowsWorkerResult } from "./worker-result.js";
+import { validateTestDocumentWindow } from "../../shared/notepad.js";
 import {
   WindowsPolicy,
   WindowEvidence,
@@ -307,10 +308,7 @@ export class WindowsComputer {
         throw new Error(
           "Observed process does not match the authorized executable.",
         );
-      if (document && !window.title.includes(document.name))
-        throw new Error(
-          "Registered document title could not be verified; no target guessing is allowed.",
-        );
+      if (document) validateTestDocumentWindow(window, document.name);
       if (command.kind === "act" || command.kind === "saveDocument") {
         if (
           window.windowId !== before!.window.windowId ||

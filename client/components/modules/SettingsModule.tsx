@@ -1,6 +1,7 @@
 import { Check, Monitor } from "lucide-react";
 
 import { api } from "../../api";
+import { UpdatePanel } from "../UpdatePanel";
 
 import type { ModuleContext } from "../Modules";
 export function SettingsModule({
@@ -12,6 +13,7 @@ export function SettingsModule({
 }: Pick<ModuleContext, "s" | "act" | "visual" | "setVisual" | "handle">) {
   return (
     <div className="settings">
+      <UpdatePanel />
       <section>
         <h3>Operating policy</h3>
         <p>Changes are persisted and enforced by the service.</p>
@@ -165,8 +167,10 @@ export function SettingsModule({
           {Math.floor(s.uptimeSeconds / 60)} minutes uptime
         </p>
         <p>
-          Voice: browser-dependent; English recognition requested. Nepali, wake
-          word and offline recognition are not validated.
+          Voice: English and Nepali can be selected. Local recognition depends
+          on the installed browser and language packs; remote recognition needs
+          explicit consent. Wake word and live AI voice reasoning are not
+          verified.
         </p>
         <p>
           Persistent storage: local SQLite · memory search: scoped lexical

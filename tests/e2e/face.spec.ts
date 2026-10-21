@@ -2,6 +2,45 @@ import { test, expect } from "@playwright/test";
 import { openDashboard } from "./dashboard-session.js";
 import { faceStates, faceLabels } from "../../client/faceAnimation.js";
 
+// Read actual browser screenshots without adding an image dependency. GPU
+// compositing may round an unchanged color by one or two 8-bit levels; compare
+// decoded pixels instead of PNG bytes so that rounding is not called motion.
+async function changedPixels(
+  page: import("@playwright/test").Page,
+  a: Buffer,
+  b: Buffer,
+) {
+  return page.evaluate(
+    async ([first, second]) => {
+      const pixels = async (encoded: string) => {
+        const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
+        const bitmap = await createImageBitmap(
+          new Blob([bytes], { type: "image/png" }),
+        );
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return ctx.getImageData(0, 0, canvas.width, canvas.height);
+      };
+      const [left, right] = await Promise.all([pixels(first), pixels(second)]);
+      if (left.width !== right.width || left.height !== right.height)
+        throw new Error("Screenshot size changed");
+      let changed = 0;
+      for (let i = 0; i < left.data.length; i += 4) {
+        if (
+          [0, 1, 2, 3].some(
+            (c) => Math.abs(left.data[i + c] - right.data[i + c]) > 2,
+          )
+        )
+          changed++;
+      }
+      return changed;
+    },
+    [a.toString("base64"), b.toString("base64")],
+  );
+}
+
 async function evidence(page: import("@playwright/test").Page) {
   const s = await (await page.request.get("/api/state")).json();
   return {
@@ -70,17 +109,18 @@ test("real idle animation moves, reports measured frames, and pauses without con
   const a = await canvas.screenshot();
   await page.waitForTimeout(450);
   const b = await canvas.screenshot();
-  expect(a.equals(b)).toBe(false);
+  expect(await changedPixels(page, a, b)).toBeGreaterThan(100);
   await page
     .getByRole("button", { name: "Pause visual effects", exact: true })
     .click();
   await expect(metrics).toHaveAttribute("data-render-state", "paused");
   await page.waitForTimeout(400);
   const frameCount = await metrics.getAttribute("data-frames");
-  const paused = await canvas.screenshot({path:"artifacts/face-paused-a.png"});
+  await page.mouse.move(0, 0);
+  const paused = await canvas.screenshot();
   await page.waitForTimeout(2200);
   expect(await metrics.getAttribute("data-frames")).toBe(frameCount);
-  expect((await canvas.screenshot({path:"artifacts/face-paused-b.png"})).equals(paused)).toBe(true);
+  expect(await changedPixels(page, paused, await canvas.screenshot())).toBe(0);
   await page
     .getByRole("button", { name: "Resume visual effects", exact: true })
     .click();
@@ -111,9 +151,12 @@ test("reduced motion leaves the face static and preview does not bypass it", asy
   const metrics = page.getByLabel("Face render measurements", { exact: true });
   await expect(metrics).toHaveAttribute("data-render-state", "reduced-motion");
   await page.waitForTimeout(400);
-  const image = await page.locator("canvas").screenshot({path:"artifacts/face-reduced-a.png"});
+  await page.mouse.move(0, 0);
+  const image = await page.locator("canvas").screenshot();
   const frames = await metrics.getAttribute("data-frames");
   await page.waitForTimeout(1200);
-  expect((await page.locator("canvas").screenshot({path:"artifacts/face-reduced-b.png"})).equals(image)).toBe(true);
+  expect(
+    await changedPixels(page, image, await page.locator("canvas").screenshot()),
+  ).toBe(0);
   expect(await metrics.getAttribute("data-frames")).toBe(frames);
 });

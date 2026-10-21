@@ -115,31 +115,41 @@ namespace AgentsDesktop {
       }
       if (tabs > 1) throw new Exception("Additional Notepad tabs are prohibited in a disposable test.");
     }
+    // Called only after exact executable/session/title checks. This pure selection
+    // boundary is also exercised by CI without enumerating or controlling a desktop.
+    public static long SelectNewDocumentHandle(long[] matchingHandles, long[] previousHandles) {
+      HashSet<long> previous = new HashSet<long>(previousHandles);
+      HashSet<long> candidates = new HashSet<long>();
+      foreach (long handle in matchingHandles) {
+        if (handle == 0) throw new Exception("Invalid registered document window handle.");
+        if (previous.Contains(handle)) throw new Exception("Notepad reused an existing window. No input was sent. Configure Notepad to open files in a new window, then start a fresh test.");
+        candidates.Add(handle);
+      }
+      if (candidates.Count > 1) throw new Exception("Multiple new registered document windows appeared; refusing ambiguous handoff.");
+      foreach (long handle in candidates) return handle;
+      return 0;
+    }
     public static long FindNewTestWindow(string executable, string path, string name, long[] previousHandles) {
       ValidateTestFile(path, name);
-      HashSet<long> previous = new HashSet<long>(previousHandles);
       List<long> candidates = new List<long>();
-      bool reused = false;
       EnumWindows(delegate(IntPtr hwnd, IntPtr arg) {
         try {
           using (Process p = ProcessFor(hwnd, executable)) { }
           if (!TestDocumentTitle(AutomationElement.FromHandle(hwnd).Current.Name, name)) return true;
-          if (previous.Contains(hwnd.ToInt64())) reused = true;
-          else candidates.Add(hwnd.ToInt64());
+          candidates.Add(hwnd.ToInt64());
         } catch { /* Unavailable or non-authorized windows never become candidates. */ }
         return true;
       }, IntPtr.Zero);
-      if (reused) throw new Exception("Notepad reused an existing window. No input was sent. Configure Notepad to open files in a new window, then start a fresh test.");
-      if (candidates.Count > 1) throw new Exception("Multiple new registered document windows appeared; refusing ambiguous handoff.");
-      if (candidates.Count == 0) return 0;
-      Window window = Observe(candidates[0], executable);
+      long selected = SelectNewDocumentHandle(candidates.ToArray(), previousHandles);
+      if (selected == 0) return 0;
+      Window window = Observe(selected, executable);
       // Loading UI can briefly have no editor; the caller's deadline remains binding.
       bool ready = false;
       foreach (Element e in window.elements) if (e.controlType == "ControlType.Edit" || e.controlType == "ControlType.Document") ready = true;
       if (!ready) return 0;
       ValidateIsolatedEditor(window, name, "");
-      ValidateAllTabs(new IntPtr(candidates[0]), name);
-      return candidates[0];
+      ValidateAllTabs(new IntPtr(selected), name);
+      return selected;
     }
     static Box Bounds(System.Windows.Rect r) { return new Box { x=r.X, y=r.Y, width=r.Width, height=r.Height }; }
     static bool Valid(Box r) { return !Double.IsInfinity(r.x) && !Double.IsNaN(r.x) && r.width > 0 && r.height > 0; }

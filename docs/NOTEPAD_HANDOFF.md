@@ -1,18 +1,18 @@
-# Windows 11 Notepad handoff audit and proposed fix
+# Windows 11 Notepad handoff implementation and acceptance
 
-Status: audit and implementation proposal only. Implement after the updater phase, as requested. Cloud fixtures or Windows compilation must not be described as a successful test on the owner's laptop.
+Status: scoped implementation follows the updater implementation and focused updater tests. Cloud evidence fixtures and pure native selection fixtures cover the new boundaries. Windows CI compilation and real-device acceptance must be reported separately; neither fixture tests nor an installer build establish successful Notepad control on the owner's laptop.
 
 ## Confirmed failure
 
-The native worker launches the exact authorized executable, then waits for that returned process's `MainWindowHandle`. It fails immediately if the launcher exits. Packaged Windows 11 Notepad may hand the document to another process, so a real editor can open while this verification fails.
+The previous native worker waited for the launched process's `MainWindowHandle` and failed immediately if that launcher exited. Packaged Windows 11 Notepad may hand the document to another process, so a real editor could open while verification failed. The registered-document path now polls for a fresh matching window for at most ten seconds, even after launcher exit. It launches only once. Generic application launch retains the original process-bound behavior.
 
 The native and server adapters independently require the actual window owner's executable to match the exact policy path. Keep these checks. A `C:\Windows\System32\notepad.exe` permission must not silently authorize a WindowsApps executable. The owner must review and explicitly allow the actual installed packaged editor path; a later Store update changing that path must fail closed until reviewed again.
 
 The document workflow already creates an exclusive GUID-named file, requires separate approvals, binds later input to a window handle/PID/start time, and verifies saved file bytes. Keep all these controls and the no-replay behavior.
 
-Additional confirmed gaps: document-title checks use substring matching, and one visible editor does not prove that a window has no personal tabs.
+Document-title checks now match the complete GUID filename, with the supported English Notepad suffix and optional unsaved marker. Both native and server evidence validators reject extra tabs and ambiguous editors. Native checks also inspect offscreen tab elements. Unsupported/localized title formats fail closed rather than guessing.
 
-## Scoped fix
+## Implemented boundaries
 
 1. Validate the registered empty file and explicit exact executable before starting anything. Keep the existing single quoted file argument, no shell execution and no elevation.
 2. Snapshot all existing top-level HWNDs, including hidden/minimized ones, before launching. A restored personal window must not count as a new window.

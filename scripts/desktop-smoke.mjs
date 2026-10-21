@@ -33,10 +33,22 @@ try {
     keys: Object.keys(window.agentsUpdates).sort(),
     status: await window.agentsUpdates.getStatus(),
   }));
-  assert.deepEqual(bridge.keys, ["cancel", "check", "download", "getStatus", "install", "onStatus"]);
-  assert.equal(bridge.status.currentVersion, JSON.parse(await readFile("package.json", "utf8")).version);
+  assert.deepEqual(bridge.keys, [
+    "cancel",
+    "check",
+    "download",
+    "getStatus",
+    "install",
+    "onStatus",
+  ]);
+  assert.equal(
+    bridge.status.currentVersion,
+    JSON.parse(await readFile("package.json", "utf8")).version,
+  );
   assert.equal(bridge.status.phase, "unavailable");
-  console.log("PASS: sandboxed update bridge exposes only fixed verbs and refuses development installation.");
+  console.log(
+    "PASS: sandboxed update bridge exposes only fixed verbs and refuses development installation.",
+  );
   await promisify(execFile)(child.spawnfile, args, {
     cwd: process.cwd(),
     env: {

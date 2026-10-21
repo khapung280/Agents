@@ -2,7 +2,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import type { UpdateStatus } from "../../client/desktopUpdates";
 import { openDashboard } from "./dashboard-session.js";
-const { version } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+const { version } = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+);
 
 // The browser fixture replaces Electron IPC and native approval only. These are
 // UI tests, not signature-verification, Windows installer or SmartScreen tests.

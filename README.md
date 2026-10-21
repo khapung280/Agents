@@ -8,6 +8,8 @@ This repository is a working foundation, not a completed general-purpose autonom
 
 A per-user Windows x64 installer and desktop shortcut are now supported. See [installation and native test steps](docs/WINDOWS_INSTALL.md). The package includes its runtime; no VS Code, Node installation, or API key is needed for built-in workflows. The installer can be cross-compiled in Linux; that does **not** verify Windows execution. Real-device acceptance of general AI-driven workflows remains pending.
 
+Version 0.2.0 adds **Settings → Application updates** with GitHub build-provenance verification, bounded downloads and native installation approval. One reviewed bootstrap installation is needed for older versions. The app remains unsigned in Windows; SmartScreen and organization policy remain authoritative. See [update trust, preservation and recovery](docs/UPDATES.md). The [real dashboard capture](docs/ANIMATION_CAPTURE.md) includes twelve explicitly labeled visual previews without creating task activity.
+
 ## Start locally
 
 Use Node **24 LTS**, npm, and a current desktop browser.

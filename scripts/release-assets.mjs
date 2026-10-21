@@ -2,9 +2,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { resolve, join } from "node:path";
-const { verifyRelease, validateManifest } = createRequire(import.meta.url)(
-  "../desktop/update-trust.cjs",
-);
+const { verifyRelease, validateManifest, compareVersions } = createRequire(
+  import.meta.url,
+)("../desktop/update-trust.cjs");
 const [mode, directoryArg = "artifacts/windows"] = process.argv.slice(2);
 const directory = resolve(directoryArg);
 const name = "Ultimate-Agents-Both-Setup.exe";
@@ -16,6 +16,8 @@ const info = JSON.parse(
 const pkg = JSON.parse(
   await readFile(new URL("../package.json", import.meta.url), "utf8"),
 );
+// Validate before using the version in the release-notes path.
+compareVersions(pkg.version, pkg.version);
 if (
   info.version !== pkg.version ||
   info.platform !== "win32" ||
@@ -59,6 +61,7 @@ if (mode === "prepare") {
     { currentVersion: pkg.version },
   );
   if (
+    manifest.version !== pkg.version ||
     manifest.sourceCommit !== info.commit ||
     manifest.installer.size !== installer.length ||
     manifest.installer.sha256 !== sha256

@@ -194,6 +194,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Downloaded release provenance verification failed.' }
           $info = Get-Content (Join-Path $directory 'package-info.json') -Raw | ConvertFrom-Json
           if ($info.commit -ne $env:GITHUB_SHA -or $info.workingTreeDirty) { throw 'Package source provenance does not match this clean CI commit.' }
+          Write-Output "::notice title=Verified installer SHA-256::$actual"
           @(
             '## Verified Windows installer',
             "Source commit: $env:GITHUB_SHA",

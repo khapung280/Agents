@@ -38,7 +38,11 @@ Emergency stop is persisted. It aborts running tools, cancels pending work and p
 
 ## Boundaries still to implement
 
-Actual Windows validation and hardening of the local allowlisted UI Automation worker; a remote service is not implemented; OS sandbox for generated code; secure OS keychain management; account-scoped email/calendar connectors; multi-user authentication and authorization; encryption/backup/retention policy; signed installers and updater; independent penetration testing. Do not deploy publicly or call this production-hardened until these are addressed.
+Actual Windows validation and hardening of the local allowlisted UI Automation worker; a remote service is not implemented; OS sandbox for generated code; secure OS keychain management; account-scoped email/calendar connectors; multi-user authentication and authorization; encryption/backup/retention policy; Windows Authenticode signing and real-device updater acceptance; independent penetration testing. Do not deploy publicly or call this production-hardened until these are addressed.
+
+## Update boundary
+
+The narrow Electron bridge accepts fixed verbs from the local main frame only. The updater authenticates the fixed GitHub repository/main workflow through Sigstore certificate, transparency and provenance checks using pinned public trust material. Signed metadata binds installer bytes, source commit, version, notes and compatibility. Downloads have restricted HTTPS hosts, size/time bounds, cancellation and integrity checks. Installation needs native owner approval, re-verification and clean service shutdown. Windows Internet-zone metadata and normal shell security prompts are retained. Versioned payloads preserve the previous application and external user data; permissions are not expanded. Sigstore is not Windows Authenticode signing. See [update controls, threat model and remaining acceptance](UPDATES.md).
 
 ## Windows execution phase
 

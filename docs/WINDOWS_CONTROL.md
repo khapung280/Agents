@@ -122,7 +122,7 @@ After the disposable Windows validation fixture passes, review your existing loc
 }
 ```
 
-The executable above is an example; Windows 11 may use a packaged Notepad or a launch shim. Review the actual executable path. A shim/process handoff is deliberately rejected, even if a window opens. Do not broaden permissions or repeatedly launch after an uncertain result. Policy must explicitly be enabled locally and the application restarted. No cloud policy was enabled.
+The executable above is an example; Windows 11 may use a packaged Notepad or a launch shim. Review the actual editor executable path. The registered-document workflow supports a launcher exit only when one fresh, isolated document window belongs to the exact authorized executable and Windows session. A System32 permission never implicitly authorizes a WindowsApps path. Existing-window/tab reuse and ambiguous handoffs fail closed. Do not repeatedly launch after an uncertain result. Policy must explicitly be enabled locally and the application restarted. No cloud policy was enabled. See [handoff boundaries and device acceptance](NOTEPAD_HANDOFF.md).
 
 1. Open **AGENTS → Computer → Disposable Notepad test**. Choose the reviewed app, project scope and a short one-line test string. Click **Request test document**, inspect the request, then **Approve once**. This only creates an empty fresh app-owned file.
 2. Click **Request launch approval**, review the document path/text, then approve. Inspect the captured document title and editor.
@@ -131,7 +131,7 @@ The executable above is an example; Windows 11 may use a packaged Notepad or a l
 5. Request/approve **save** separately. Only Ctrl+S for this registered document is allowed. Success requires matching live editor text and exact UTF-8 file bytes/hash within three seconds; the checkpoint shows `saved` and its SHA-256.
 6. On failure, stop and review retained task diagnostics/evidence. The test is blocked and never replays input after restart, cancellation or uncertainty. Close only the disposable document manually when finished.
 
-The document has a ten-minute deadline. A single-line, one-editor UTF-8 document is the supported initial test. Ambiguous tabs/controls, unavailable TextPattern/ValuePattern, process handoff, unexpected encoding/BOM or any changed file cause explicit failure. No Save As dialog, existing user file overwrite, unrestricted Ctrl+S command, security-policy change or screenshot upload is introduced.
+The document has a ten-minute deadline; the launch window lookup has a ten-second deadline inside the worker's outer watchdog. A single-line, one-editor UTF-8 document is the supported initial test. Ambiguous tabs/controls, unavailable TextPattern/ValuePattern, an unauthorized process handoff, unexpected encoding/BOM or any changed file cause explicit failure. No Save As dialog, existing user file overwrite, unrestricted Ctrl+S command, security-policy change or screenshot upload is introduced.
 
 ## OpenAI preparation and credentials
 

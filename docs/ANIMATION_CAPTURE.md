@@ -33,3 +33,5 @@ ffprobe -v error -show_entries format=duration:stream=codec_name,width,height -o
 ```
 
 Rendered FPS and mean/p95 frame intervals include browser scheduling and video-recording overhead. They are not CPU/GPU utilization measurements, Windows GPU results or a claim of 60 FPS. The script has a 150-second overall deadline and cleans up only its own temporary service, browser and files. Outputs are published only after the preview-isolation checks succeed. Capturing this preview does not establish real Windows PC control.
+
+The **Dashboard verification and real preview** GitHub Actions workflow repeats the backend, browser and Electron checks, then uploads these four files as **AGENTS-real-dashboard-preview**. Open a successful run for the desired commit, sign into GitHub, download that artifact and extract it. Open a PNG in an image viewer or `face-preview.webm` in Edge/Chrome or a WebM-capable video player. The recording is the running dashboard, not generated imagery; labeled preview states are visual tests rather than evidence of autonomous execution.

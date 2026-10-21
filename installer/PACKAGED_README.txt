@@ -33,6 +33,14 @@ configured. Live OpenAI vision processing remains a future approved step.
 
 Full documentation: resources\app\docs\WINDOWS_CONTROL.md
 
+UPDATES
+Open Settings > Application updates > Check for Updates. The app verifies
+GitHub build provenance and installer integrity before offering an update.
+Review installation opens a separate native approval dialog. Windows security
+prompts remain active; never disable them. Existing settings, memories and
+permissions are retained. An approved installer is not reported as installed
+until the expected new version starts successfully. See docs/UPDATES.md.
+
 GUIDED REASONING (OPTIONAL)
 Computer includes reviewed plan and screen sessions. Built-in local tools still
 need no API key. Live model calls require secure provider configuration and

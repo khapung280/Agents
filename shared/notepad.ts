@@ -38,12 +38,23 @@ export function validateTestDocumentWindow(
   name: string,
 ) {
   if (!matchesTestDocumentTitle(window.title, name))
-    throw new Error("Registered document title could not be verified; no target guessing is allowed.");
-  const tabs = window.elements.filter((e) => e.controlType === "ControlType.TabItem");
-  if (tabs.length > 1 || tabs.some((e) => !matchesTestDocumentTitle(e.name, name)))
+    throw new Error(
+      "Registered document title could not be verified; no target guessing is allowed.",
+    );
+  const tabs = window.elements.filter(
+    (e) => e.controlType === "ControlType.TabItem",
+  );
+  if (
+    tabs.length > 1 ||
+    tabs.some((e) => !matchesTestDocumentTitle(e.name, name))
+  )
     throw new Error("Personal or ambiguous Notepad tabs are prohibited.");
-  const editors = window.elements.filter((e) =>
-    ["ControlType.Edit", "ControlType.Document"].includes(e.controlType) && e.enabled && !e.password && e.value != null,
+  const editors = window.elements.filter(
+    (e) =>
+      ["ControlType.Edit", "ControlType.Document"].includes(e.controlType) &&
+      e.enabled &&
+      !e.password &&
+      e.value != null,
   );
   if (editors.length !== 1)
     throw new Error("Expected one isolated Notepad document editor.");

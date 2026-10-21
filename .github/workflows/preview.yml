@@ -1,0 +1,48 @@
+name: Dashboard verification and real preview
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check
+      - run: npm run test:e2e
+      - name: Verify the actual Electron renderer and local workflow service
+        run: xvfb-run -a npm run test:desktop
+        env:
+          AGENTS_ISOLATED_DESKTOP_TEST: "1"
+      - name: Record the actual dashboard without tasks, credentials or PC actions
+        run: node scripts/capture-face-preview.mjs
+        env:
+          AGENTS_ISOLATED_BROWSER_TEST: "1"
+      - name: Upload real screenshots, animation and measured performance
+        uses: actions/upload-artifact@v4
+        with:
+          name: AGENTS-real-dashboard-preview
+          path: |
+            artifacts/dashboard-1920x1080.png
+            artifacts/dashboard-1440x900.png
+            artifacts/face-preview.webm
+            artifacts/face-performance.json
+          if-no-files-found: error
+      - name: Upload browser diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-test-diagnostics
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore

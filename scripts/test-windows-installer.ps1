@@ -7,7 +7,12 @@ $root = Join-Path $env:RUNNER_TEMP ('agents-upgrade-' + [guid]::NewGuid())
 $data = Join-Path $env:APPDATA 'ULTIMATE AGENTS — BOTH\agents-data'
 $reg = 'HKCU:\Software\UltimateAgentsBoth'
 $uninstall = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UltimateAgentsBoth'
-if ((Test-Path $reg) -or (Test-Path $data)) { throw 'Runner is not isolated; refusing to overwrite existing AGENTS state.' }
+$desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'AGENTS.lnk'
+$menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Ultimate Agents Both'
+# Check every location touched by installation or cleanup before creating fixtures.
+foreach ($path in @($root,$data,$reg,$uninstall,$desktop,$menu)) {
+  if (Test-Path -LiteralPath $path) { throw "Runner is not isolated; refusing to overwrite existing AGENTS state: $path" }
+}
 function Install-Checked([int]$Expected) {
   $log = Join-Path $env:RUNNER_TEMP ('agents-install-' + [guid]::NewGuid())
   # NSIS /D must be last; /S is used only for this isolated CI acceptance test.
@@ -38,8 +43,10 @@ try {
   $installed = Get-Content (Join-Path $versionDir 'resources\app\package.json') -Raw | ConvertFrom-Json
   if ($installed.version -ne $version) { throw 'Installed application version differs.' }
   $shell = New-Object -ComObject WScript.Shell
-  $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'AGENTS.lnk'))
+  $shortcut = $shell.CreateShortcut($desktop)
   if ($shortcut.TargetPath -ne (Join-Path $versionDir 'AGENTS.exe')) { throw 'Desktop shortcut did not activate the new version.' }
+  $recovery = $shell.CreateShortcut((Join-Path $menu 'Previous AGENTS (recovery).lnk'))
+  if ($recovery.TargetPath -ne (Join-Path $root 'AGENTS.exe')) { throw 'Previous-version recovery shortcut is missing or incorrect.' }
   if ((Get-Content (Join-Path $root 'AGENTS.exe') -Raw).Trim() -ne 'retained previous-version fixture') { throw 'Previous application files changed.' }
   if (!(Test-Path (Join-Path $root 'personal-note.txt'))) { throw 'Unknown application-root files were removed.' }
   Install-Checked 43
@@ -58,8 +65,6 @@ try {
   # Only this disposable runner test's files/keys/shortcuts are removed.
   foreach ($path in @($root,$data,$env:AGENTS_MOTW_TEST_PATH)) { if ($path -and (Test-Path $path)) { Remove-Item -LiteralPath $path -Recurse -Force } }
   foreach ($path in @($reg,$uninstall)) { if (Test-Path $path) { Remove-Item $path -Recurse -Force } }
-  $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'AGENTS.lnk'
   if (Test-Path $desktop) { Remove-Item $desktop }
-  $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Ultimate Agents Both'
   if (Test-Path $menu) { Remove-Item $menu -Recurse -Force }
 }

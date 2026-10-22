@@ -1,0 +1,4 @@
+# These upstream security artifacts are authenticated by exact byte hashes.
+# Never apply platform checkout line-ending conversion to their contents.
+desktop/trust/sigstore-public-good.json -text
+tests/fixtures/update/official-sigstore-bundle.json -text

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { bundleFromJSON } from "@sigstore/bundle";
 import { TrustedRoot } from "@sigstore/protobuf-specs";
@@ -36,6 +37,25 @@ const manifest = () => ({
 });
 const options = { currentVersion: "0.1.0" };
 
+test("pinned upstream trust and signature fixture bytes survive platform checkout unchanged", () => {
+  for (const [path, expected] of [
+    [
+      "desktop/trust/sigstore-public-good.json",
+      "6494e21ea73fa7ee769f85f57d5a3e6a08725eae1e38c755fc3517c9e6bc0b66",
+    ],
+    [
+      "tests/fixtures/update/official-sigstore-bundle.json",
+      "0fb27faaccc8efe29c485d584adc5fc08b54e70acc48e637a8257e7bda50cc94",
+    ],
+  ]) {
+    assert.equal(
+      createHash("sha256").update(readFileSync(path)).digest("hex"),
+      expected,
+      path,
+    );
+  }
+});
+
 test("official upstream Sigstore fixture passes real offline signature, certificate and transparency verification", () => {
   const signed = verifier().verify(toSignedEntity(bundleFromJSON(official)), {
     subjectAlternativeName: "brian@dehamer.com",
@@ -66,8 +86,9 @@ test("tampered signed payload, signature, log evidence and wrong identity fail c
 });
 test("production verifier rejects genuine signatures from another publisher and malformed bundles", () => {
   const bytes = Buffer.from(JSON.stringify(manifest()));
-  assert.throws(() =>
-    verifyRelease(bytes, Buffer.from(JSON.stringify(official)), options),
+  assert.throws(
+    () => verifyRelease(bytes, Buffer.from(JSON.stringify(official)), options),
+    /certificate identity error/,
   );
   for (const bundle of [
     Buffer.from("{}"),

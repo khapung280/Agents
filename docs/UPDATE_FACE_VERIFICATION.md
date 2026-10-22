@@ -13,6 +13,14 @@ Implementation baseline: `9075bfcb644ed036d135a2b22cad3bf50e472d8a`. The approve
 
 The first local Electron attempt failed because its runtime download was unavailable; the official 44.7.2 Linux archive was fetched and verified against the checksum in the installed npm package. A stale X display also prevented launch; the rerun on a fresh disposable X server passed. Two initial face tests compared raw PNG bytes and failed on 1–2 level compositor color rounding; decoded-pixel comparisons now tolerate only that rounding while still requiring actual idle movement and static paused/reduced rendering.
 
+## Checkout integrity correction on 2026-10-22
+
+Windows run [39641975663](https://github.com/khapung280/Agents/actions/runs/39641975663) passed native compilation, packaging, the actual isolated installer and data-preservation checks, but failed at production release verification. It uploaded no installer. The genuine generated attestation was retrieved from GitHub's public attestation download and its signature, certificate, transparency evidence, publisher policy and source statement passed local verification with the original pinned trust bytes.
+
+Git's Windows-style `core.autocrlf=true` checkout changed the root file hash from the pinned `6494e21e…c0b66` to `fbb8cec6…7674b`, reproducing the integrity rejection. `.gitattributes` now disables text conversion only for the two byte-pinned upstream security artifacts. The same checkout filter now preserves the original hash. No trust root, identity or verification threshold was relaxed. The focused updater/trust suite passed **34 tests**; the full suite now passes **129 tests**. The publisher-rejection test also requires the specific identity error so an unrelated root-loading failure cannot masquerade as successful policy coverage. CI reports the specific verification failure in public annotations while retaining fail-closed behavior.
+
+The clean-commit [dashboard workflow 39641972407](https://github.com/khapung280/Agents/actions/runs/39641972407) passed all checks and published **AGENTS-real-dashboard-preview**. A new Windows run must verify the checkout correction before its installer can be distributed or offered for release publication.
+
 ## Implemented boundaries
 
 The updater verifies the fixed GitHub publisher/workflow using certificate-chain, certificate-transparency, Rekor, signature and SLSA provenance checks. Authenticated metadata binds version, compatibility, release notes, source and installer bytes. Tests cover tampering, downgrade/replacement, unsafe URLs, bounded downloads, cancellation/timeouts, native approval, repeated/uncertain handoff prevention and recovery state. Network/Windows shell fixtures are labeled. A genuine upstream Sigstore fixture verifies cryptography, but it is not an AGENTS release; production identity verification must pass on an actual generated AGENTS attestation in Windows CI.

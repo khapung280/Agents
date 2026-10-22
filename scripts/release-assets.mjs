@@ -55,11 +55,26 @@ if (mode === "prepare") {
   await writeFile(join(directory, name + ".sha256"), sha256 + "\n");
   console.log("Prepared unsigned manifest for attestation; not yet trusted.");
 } else if (mode === "verify") {
-  const manifest = verifyRelease(
-    await readFile(join(directory, "agents-update.json")),
-    await readFile(join(directory, "agents-update.sigstore.json")),
-    { currentVersion: pkg.version },
-  );
+  let manifest;
+  try {
+    manifest = verifyRelease(
+      await readFile(join(directory, "agents-update.json")),
+      await readFile(join(directory, "agents-update.sigstore.json")),
+      { currentVersion: pkg.version },
+    );
+  } catch (error) {
+    // Public build metadata only; expose the specific fail-closed reason in CI
+    // annotations so a rejected artifact is diagnosable without publishing it.
+    if (process.env.GITHUB_ACTIONS === "true") {
+      const detail = String(error.message)
+        .slice(0, 3000)
+        .replaceAll("%", "%25")
+        .replaceAll("\r", "%0D")
+        .replaceAll("\n", "%0A");
+      console.error(`::error title=Update verification rejected::${detail}`);
+    }
+    throw error;
+  }
   if (
     manifest.version !== pkg.version ||
     manifest.sourceCommit !== info.commit ||

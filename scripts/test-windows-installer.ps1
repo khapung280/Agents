@@ -39,6 +39,9 @@ function Read-NewLog([string[]]$Before) {
   $files = @(Get-ChildItem $logDir -File | Where-Object { $_.FullName -notin $Before })
   if ($files.Count -ne 1) { throw 'Expected exactly one persistent log per candidate installer run.' }
   $text = Get-Content -LiteralPath $files[0].FullName -Raw
+  if ($text -notmatch '^version=[^\r\n]+ operation=initialize ' -or [regex]::Matches($text,'(?m)^version=').Count -lt 2) {
+    throw 'Persistent installer log lost earlier operations instead of appending.'
+  }
   foreach ($private in @($root,$data,$env:USERPROFILE,'private-memory-fixture','sample-sensitive-value')) {
     if ($private -and $text.Contains($private)) { throw 'Installer log exposed private fixture data or an absolute path.' }
   }

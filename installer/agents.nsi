@@ -119,6 +119,13 @@ Function Diagnostic
   ClearErrors
   FileOpen $0 "$LogPath" a
   IfErrors diagnostic_failed
+  ; NSIS 'a' means OPEN_ALWAYS, not FILE_APPEND_DATA: seek explicitly on every
+  ; reopen so cleanup can never overwrite the operation that actually failed.
+  FileSeek $0 0 END
+  ${If} ${Errors}
+    FileClose $0
+    Goto diagnostic_failed
+  ${EndIf}
   System::Call 'kernel32::GetTickCount() i .r1'
   FileWrite $0 "version=${APP_VERSION} tick=$1 operation=$Operation item=$InstallItem outcome=$Outcome win32=$Win32Error$\r$\n"
   IfErrors 0 +2

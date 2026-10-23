@@ -1,70 +1,217 @@
-# Isolated hosted-runner installation test. Silent installation is CI-only.
+# Real installers, isolated Windows runner, no desktop input. /S is CI-only.
 $ErrorActionPreference = 'Stop'
-if ($env:GITHUB_ACTIONS -ne 'true') { throw 'This test is restricted to disposable GitHub Actions runners.' }
+if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Restricted to disposable GitHub Actions runners.' }
 $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
 $installer = (Resolve-Path 'artifacts/windows/Ultimate-Agents-Both-Setup.exe').Path
-$root = Join-Path $env:RUNNER_TEMP ('agents-upgrade-' + [guid]::NewGuid())
+$testRoot = Join-Path $env:RUNNER_TEMP ('agents-upgrade-' + [guid]::NewGuid())
+$root = Join-Path $testRoot 'Upgrade With Spaces\Ultimate Agents Both'
 $data = Join-Path $env:APPDATA 'ULTIMATE AGENTS — BOTH\agents-data'
+$logDir = Join-Path $env:LOCALAPPDATA 'UltimateAgentsBoth\InstallerLogs'
+$diagnostics = Join-Path $pwd 'artifacts/installer-diagnostics'
 $reg = 'HKCU:\Software\UltimateAgentsBoth'
 $uninstall = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UltimateAgentsBoth'
 $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'AGENTS.lnk'
 $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Ultimate Agents Both'
-# Check every location touched by installation or cleanup before creating fixtures.
-foreach ($path in @($root,$data,$reg,$uninstall,$desktop,$menu)) {
-  if (Test-Path -LiteralPath $path) { throw "Runner is not isolated; refusing to overwrite existing AGENTS state: $path" }
+foreach ($path in @($testRoot,$data,$logDir,$reg,$uninstall,$desktop,$menu)) {
+  if (Test-Path -LiteralPath $path) { throw 'Runner has existing AGENTS state; refusing to modify it.' }
 }
-function Install-Checked([int]$Expected) {
-  $log = Join-Path $env:RUNNER_TEMP ('agents-install-' + [guid]::NewGuid())
-  # NSIS /D must be last; /S is used only for this isolated CI acceptance test.
-  $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$root") -PassThru -RedirectStandardOutput "$log.out" -RedirectStandardError "$log.err"
-  if (!$process.WaitForExit(120000)) { $process.Kill(); throw 'Installer exceeded 120 seconds.' }
-  $process.WaitForExit()
-  if ($process.ExitCode -ne $Expected) { throw "Installer exit $($process.ExitCode), expected $Expected. Logs: $log" }
+$results = [Collections.Generic.List[string]]::new()
+function Pass([string]$name) { $results.Add($name); Write-Host "PASS: $name" }
+function Snapshot([string[]]$Paths) {
+  $snapshot = @{}
+  foreach ($path in $Paths) {
+    if (!(Test-Path -LiteralPath $path)) { $snapshot[$path] = 'absent'; continue }
+    if (Test-Path -LiteralPath $path -PathType Leaf) { $snapshot[$path] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash; continue }
+    foreach ($file in Get-ChildItem -LiteralPath $path -Recurse -File -Force) { $snapshot[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+  }
+  return ($snapshot.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "`n"
 }
+function RegistrySnapshot {
+  $values = @()
+  foreach ($path in @($reg,$uninstall)) {
+    if (!(Test-Path $path)) { $values += "$path=absent"; continue }
+    $key = Get-Item $path
+    foreach ($name in ($key.GetValueNames() | Sort-Object)) { $values += "$path/$name/$($key.GetValueKind($name))=$($key.GetValue($name))" }
+  }
+  return $values -join "`n"
+}
+function Read-NewLog([string[]]$Before) {
+  $files = @(Get-ChildItem $logDir -File | Where-Object { $_.FullName -notin $Before })
+  if ($files.Count -ne 1) { throw 'Expected exactly one persistent log per candidate installer run.' }
+  $text = Get-Content -LiteralPath $files[0].FullName -Raw
+  foreach ($private in @($root,$data,$env:USERPROFILE,'private-memory-fixture','sample-sensitive-value')) {
+    if ($private -and $text.Contains($private)) { throw 'Installer log exposed private fixture data or an absolute path.' }
+  }
+  return $text
+}
+function Install-Checked([string]$Exe,[int]$Expected,[string]$Fault = '') {
+  $beforeLogs = @(Get-ChildItem $logDir -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
+  $handle = [IntPtr]::Zero
+  if ($Fault -eq 'activation-lock') {
+    $handle = [AgentsInstallerLock]::OpenShortcut((Join-Path $menu 'Test Windows Control.lnk'))
+    if ($handle -eq [IntPtr]::new(-1)) { throw 'Could not acquire isolated shortcut lock.' }
+  }
+  # NSIS /D must be last, with no extra quoting around the directory value.
+  $process = Start-Process -FilePath $Exe -ArgumentList @('/S', "/D=$root") -PassThru
+  $clock = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    if ($Fault -in @('persistent-lock','transient-lock','original-lock')) {
+      $stageVersion = if ($Fault -eq 'original-lock') { '0.2.0' } else { $version }
+      $stage = Join-Path $root ".stage-$stageVersion"
+      while (!$process.HasExited -and $clock.Elapsed.TotalSeconds -lt 45) {
+        if (Test-Path -LiteralPath $stage -PathType Container) {
+          $handle = [AgentsInstallerLock]::Open($stage)
+          if ($handle -ne [IntPtr]::new(-1)) { break }
+          $handle = [IntPtr]::Zero
+        }
+        Start-Sleep -Milliseconds 10
+      }
+      if ($handle -eq [IntPtr]::Zero) { throw 'Could not synchronize isolated staging lock.' }
+      if ($Fault -eq 'persistent-lock') {
+        Set-Content (Join-Path $stage 'unknown-owner-file.txt') 'retain this unknown fixture' -Encoding ascii
+      } elseif ($Fault -eq 'transient-lock') {
+        $sawRetry = $false
+        while (!$process.HasExited -and $clock.Elapsed.TotalSeconds -lt 100) {
+          foreach ($file in @(Get-ChildItem $logDir -File | Where-Object { $_.FullName -notin $beforeLogs })) {
+            if ((Get-Content $file.FullName -Raw) -match 'operation=promote-stage .*outcome=retry win32=(5|32|33)') { $sawRetry = $true; break }
+          }
+          if ($sawRetry) { break }
+          Start-Sleep -Milliseconds 25
+        }
+        if (!$sawRetry) { throw 'Transient-lock test did not observe a real Windows sharing failure.' }
+        [AgentsInstallerLock]::Close($handle); $handle = [IntPtr]::Zero
+      }
+    }
+    $remaining = [Math]::Max(1,180000 - [int]$clock.ElapsedMilliseconds)
+    if (!$process.WaitForExit($remaining)) { $process.Kill(); throw 'Installer exceeded its 180-second CI bound.' }
+    $process.WaitForExit()
+    if ($Exe -eq $installer) {
+      $script:lastLog = Read-NewLog $beforeLogs
+      if ($process.ExitCode -ne $Expected) { Write-Host $script:lastLog; throw "Candidate installer exit $($process.ExitCode), expected $Expected." }
+    } elseif ($process.ExitCode -ne $Expected) { throw "Pinned previous installer exit $($process.ExitCode), expected $Expected." }
+  } finally {
+    if ($handle -ne [IntPtr]::Zero) { [AgentsInstallerLock]::Close($handle) }
+    if (!$process.HasExited) { $process.Kill(); $process.WaitForExit() }
+  }
+}
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AgentsInstallerLock {
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+  static extern IntPtr CreateFileW(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  public static IntPtr Open(string path) { return CreateFileW(path, 0, 3, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero); }
+  public static IntPtr OpenShortcut(string path) { return CreateFileW(path, 0, 1, IntPtr.Zero, 3, 0, IntPtr.Zero); }
+  public static void Close(IntPtr handle) { CloseHandle(handle); }
+}
+'@
 try {
-  New-Item -ItemType Directory -Path $root,$data -Force | Out-Null
-  # Prior layout is an explicit fixture, not a claim of running a prior binary.
-  Set-Content (Join-Path $root 'AGENTS.exe') 'retained previous-version fixture' -Encoding ascii
-  Set-Content (Join-Path $root 'personal-note.txt') 'must remain unchanged' -Encoding utf8
+  New-Item -ItemType Directory -Path $testRoot,$data,$diagnostics -Force | Out-Null
+  $previous = Join-Path $testRoot 'previous-release'
+  New-Item -ItemType Directory -Path $previous | Out-Null
+  foreach ($name in @('Ultimate-Agents-Both-Setup.exe','agents-update.json','agents-update.sigstore.json')) {
+    & "$env:SystemRoot\System32\curl.exe" --fail --location --silent --show-error --max-time 180 --retry 2 --output (Join-Path $previous $name) "https://github.com/khapung280/Agents/releases/download/v0.2.0/$name"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not download pinned previous release.' }
+  }
+  $oldInstaller = Join-Path $previous 'Ultimate-Agents-Both-Setup.exe'
+  if ((Get-FileHash $oldInstaller -Algorithm SHA256).Hash -ne '3005B62F3B03AE30FA6C9AC2ECA8AAD911002E8F96EAC17E2FA22E66049DA4A0') { throw 'Previous installer checksum differs from approved v0.2.0.' }
+  $env:AGENTS_PREVIOUS_RELEASE = $previous
+  node -e 'const fs=require("node:fs"),p=require("node:path"),d=process.env.AGENTS_PREVIOUS_RELEASE,m=require("./desktop/update-trust.cjs").verifyRelease(fs.readFileSync(p.join(d,"agents-update.json")),fs.readFileSync(p.join(d,"agents-update.sigstore.json")),{currentVersion:"0.2.0"});if(m.sourceCommit!=="2b73836b0a855b3299b56aafd5b770224835a9de"||m.installer.sha256!=="3005b62f3b03ae30fa6c9ac2eca8aad911002e8f96eac17e2fa22e66049da4a0")throw Error("Previous provenance mismatch");'
+  if ($LASTEXITCODE -ne 0) { throw 'Previous release publisher/provenance verification failed.' }
+  # Reproduce v0.2.0's generic failure with a real directory handle. The old
+  # flat file/InstallDir registry are explicitly a layout fixture, not a prior app.
+  New-Item -ItemType Directory -Path $root -Force | Out-Null
+  New-Item -Path $reg -Force | Out-Null
+  Set-ItemProperty $reg InstallDir $root
+  Set-Content (Join-Path $root 'AGENTS.exe') 'retained flat-layout fixture' -Encoding ascii
+  $legacyBefore = Snapshot @((Join-Path $root 'AGENTS.exe'),$data,$desktop,$menu)
+  $legacyRegistry = RegistrySnapshot
+  Install-Checked $oldInstaller 44 'original-lock'
+  if ((Snapshot @((Join-Path $root 'AGENTS.exe'),$data,$desktop,$menu)) -ne $legacyBefore -or (RegistrySnapshot) -ne $legacyRegistry) { throw 'Original failing installer changed protected fixture state.' }
+  $originalStage = Join-Path $root '.stage-0.2.0'
+  if (Test-Path $originalStage) { Remove-Item -LiteralPath $originalStage -Recurse -Force }
+  Pass 'Published v0.2.0 generic staging failure reproduced with an injected directory lock; legacy-layout fixture retained'
+  Install-Checked $oldInstaller 0
+  Pass 'Actual authenticated v0.2.0 installed at a path containing spaces'
+  $oldDir = Join-Path $root 'versions\0.2.0'
+  if (!(Test-Path (Join-Path $oldDir 'AGENTS.exe'))) { throw 'Previous installation payload missing.' }
+  Set-Content (Join-Path $root 'personal-note.txt') 'sample-sensitive-value' -Encoding utf8
   Set-Content (Join-Path $data 'windows-policy.json') '{"enabled":false,"apps":[]}' -Encoding utf8
-  Set-Content (Join-Path $data 'memory-fixture.json') '{"private":"preserve me"}' -Encoding utf8
+  Set-Content (Join-Path $data 'memory-fixture.json') '{"private":"private-memory-fixture"}' -Encoding utf8
   Set-Content (Join-Path $data 'database-fixture.bin') 'database-byte-preservation fixture' -Encoding ascii
-  $before = Get-ChildItem $data -File | ForEach-Object { @{ Path=$_.FullName; Hash=(Get-FileHash $_.FullName -Algorithm SHA256).Hash } }
-  # Fail before staging against an existing target; current files must survive.
-  $collision = Join-Path $root ".stage-$version"
-  New-Item -ItemType Directory -Path $collision | Out-Null
-  Set-Content (Join-Path $collision 'owner-file') 'do not overwrite'
-  Install-Checked 42
-  if ((Get-Content (Join-Path $collision 'owner-file') -Raw).Trim() -ne 'do not overwrite') { throw 'Collision path was changed.' }
-  Remove-Item $collision -Recurse
-  Install-Checked 0
+  $protected = @($oldDir,$data,(Join-Path $root 'personal-note.txt'),$desktop,$menu)
+  $before = Snapshot $protected
+  $dataBefore = Snapshot @($oldDir,$data,(Join-Path $root 'personal-note.txt'))
+  $regBefore = RegistrySnapshot
+  function Assert-Preserved {
+    if ((Snapshot $protected) -ne $before -or (RegistrySnapshot) -ne $regBefore) { throw 'Previous payload, shortcuts, registry, user data or permissions changed after failed upgrade.' }
+  }
+  $stage = Join-Path $root ".stage-$version"
+  Set-Content $stage 'owned by someone else'
+  Install-Checked $installer 42
+  if ((Get-Content $stage -Raw).Trim() -ne 'owned by someone else') { throw 'Collision file was modified.' }
+  Assert-Preserved
+  Remove-Item -LiteralPath $stage
+  Pass 'Preexisting staging file rejected without changing prior installation'
+  $acl = Get-Acl -LiteralPath $root
+  $denied = Get-Acl -LiteralPath $root
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent().User
+  $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity,[Security.AccessControl.FileSystemRights]::CreateDirectories,[Security.AccessControl.AccessControlType]::Deny)
+  $denied.AddAccessRule($rule)
+  try {
+    Set-Acl -LiteralPath $root -AclObject $denied
+    Install-Checked $installer 44
+    if ($script:lastLog -notmatch 'operation=create-stage .*outcome=failed win32=5') { throw 'Stage permission failure lacks exact Windows error.' }
+  } finally { Set-Acl -LiteralPath $root -AclObject $acl }
+  Assert-Preserved
+  Pass 'Permission-denied staging reports Windows error 5 and preserves previous state'
+  Install-Checked $installer 44 'persistent-lock'
+  if ($script:lastLog -notmatch 'operation=promote-stage .*outcome=failed win32=(5|32|33)') { throw 'Promotion lock lacks precise Windows diagnostic.' }
+  if ([regex]::Matches($script:lastLog,'operation=promote-stage .*outcome=retry').Count -ne 7) { throw 'Promotion retries are not bounded to seven.' }
+  if (!(Test-Path (Join-Path $stage 'unknown-owner-file.txt'))) { throw 'Cleanup removed unknown staging file.' }
+  Assert-Preserved
+  Remove-Item -LiteralPath $stage -Recurse -Force # owned isolated fixture only
+  Pass 'Persistent directory lock fails within a bound and preserves previous state and unknown files'
+  Install-Checked $installer 45 'activation-lock'
+  if ($script:lastLog -notmatch 'operation=activate-shortcuts .*outcome=failed') { throw 'Injected shortcut failure did not reach activation.' }
+  Assert-Preserved
+  # Retained candidate payload belongs to this disposable test, not a user install.
+  Remove-Item -LiteralPath (Join-Path $root "versions\$version") -Recurse -Force
+  Pass 'Activation failure restores exact previous shortcut bytes and registry values'
+  Install-Checked $installer 0 'transient-lock'
+  if ($script:lastLog -notmatch 'operation=installation .*outcome=success') { throw 'Successful upgrade receipt missing.' }
   $versionDir = Join-Path $root "versions\$version"
-  if (!(Test-Path (Join-Path $versionDir 'AGENTS.exe'))) { throw 'Installed executable missing.' }
   $installed = Get-Content (Join-Path $versionDir 'resources\app\package.json') -Raw | ConvertFrom-Json
   if ($installed.version -ne $version) { throw 'Installed application version differs.' }
+  $payload = (Resolve-Path 'artifacts/windows/AGENTS').Path
+  foreach ($file in Get-ChildItem -LiteralPath $payload -Recurse -File -Force) {
+    $relative = [IO.Path]::GetRelativePath($payload,$file.FullName)
+    if ((Get-FileHash -LiteralPath (Join-Path $versionDir $relative) -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) { throw 'Installed payload differs from verified package.' }
+  }
   $shell = New-Object -ComObject WScript.Shell
-  $shortcut = $shell.CreateShortcut($desktop)
-  if ($shortcut.TargetPath -ne (Join-Path $versionDir 'AGENTS.exe')) { throw 'Desktop shortcut did not activate the new version.' }
-  $recovery = $shell.CreateShortcut((Join-Path $menu 'Previous AGENTS (recovery).lnk'))
-  if ($recovery.TargetPath -ne (Join-Path $root 'AGENTS.exe')) { throw 'Previous-version recovery shortcut is missing or incorrect.' }
-  if ((Get-Content (Join-Path $root 'AGENTS.exe') -Raw).Trim() -ne 'retained previous-version fixture') { throw 'Previous application files changed.' }
-  if (!(Test-Path (Join-Path $root 'personal-note.txt'))) { throw 'Unknown application-root files were removed.' }
-  Install-Checked 43
-  Set-ItemProperty $reg Version '65535.0.0'
-  Install-Checked 43
-  Set-ItemProperty $reg Version $version
-  foreach ($item in $before) { if ((Get-FileHash $item.Path -Algorithm SHA256).Hash -ne $item.Hash) { throw 'User data or permissions changed.' } }
-  # Actual Windows NTFS Internet-zone persistence, without running the marked file.
-  $env:AGENTS_MOTW_TEST_PATH = Join-Path $env:RUNNER_TEMP ('agents-zone-' + [guid]::NewGuid() + '.exe')
+  if ($shell.CreateShortcut($desktop).TargetPath -ne (Join-Path $versionDir 'AGENTS.exe')) { throw 'Desktop shortcut did not activate new version.' }
+  if ($shell.CreateShortcut((Join-Path $menu 'Previous AGENTS (recovery).lnk')).TargetPath -ne (Join-Path $oldDir 'AGENTS.exe')) { throw 'Recovery shortcut does not point to actual previous installation.' }
+  if ((Snapshot @($oldDir,$data,(Join-Path $root 'personal-note.txt'))) -ne $dataBefore) { throw 'Successful upgrade changed retained payload or personal data.' }
+  Pass 'Actual v0.2.0 upgrade recovers from transient lock; every packaged file and recovery target verified'
+  Install-Checked $installer 43
+  Install-Checked $oldInstaller 43
+  Pass 'Same-version reinstall and downgrade rejected'
+  $env:AGENTS_MOTW_TEST_PATH = Join-Path $testRoot 'internet-zone-test.exe'
   Copy-Item $installer $env:AGENTS_MOTW_TEST_PATH
-  node -e "require('./desktop/updater.cjs').markInternetDownload(process.env.AGENTS_MOTW_TEST_PATH,require('./package.json').version).then(()=>console.log('PASS: Windows Internet-zone metadata written and verified'))"
+  node -e 'require("./desktop/updater.cjs").markInternetDownload(process.env.AGENTS_MOTW_TEST_PATH,require("./package.json").version).then(()=>console.log("PASS: Windows Internet-zone metadata retained"))'
   if ($LASTEXITCODE -ne 0) { throw 'Windows Internet-zone test failed.' }
-  Write-Host 'PASS: production installer staged/activated version, rejected collision/reinstall/downgrade, preserved previous payload and personal-data fixture bytes.'
-  'Real installer executed on hosted Windows with an explicit prior-layout fixture. Personal laptop installation and SmartScreen remain unverified.' | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+  Pass 'Windows Internet-zone persistence'
+} catch {
+  $safe = $_.Exception.Message.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+  Write-Output "::error title=Installer acceptance failed::$safe"
+  throw
 } finally {
-  # Only this disposable runner test's files/keys/shortcuts are removed.
-  foreach ($path in @($root,$data,$env:AGENTS_MOTW_TEST_PATH)) { if ($path -and (Test-Path $path)) { Remove-Item -LiteralPath $path -Recurse -Force } }
-  foreach ($path in @($reg,$uninstall)) { if (Test-Path $path) { Remove-Item $path -Recurse -Force } }
-  if (Test-Path $desktop) { Remove-Item $desktop }
-  if (Test-Path $menu) { Remove-Item $menu -Recurse -Force }
+  New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
+  if (Test-Path $logDir) { Copy-Item (Join-Path $logDir '*.log') $diagnostics }
+  @{candidate=$version;previous='0.2.0';testsPassed=@($results);realLaptopVerified=$false} | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $diagnostics 'results.json') -Encoding utf8
+  if ($env:GITHUB_STEP_SUMMARY) { ($results | ForEach-Object { "PASS: $_" }) -join "`n`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
+  foreach ($path in @($testRoot,$data,$logDir,$reg,$uninstall,$desktop,$menu)) {
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+  }
 }

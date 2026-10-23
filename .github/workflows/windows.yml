@@ -124,7 +124,7 @@ jobs:
         run: |
           $compiler = $env:AGENTS_NSIS_COMPILER
           if (!$compiler -or !(Test-Path -LiteralPath $compiler -PathType Leaf)) { throw 'Verified NSIS compiler is unavailable.' }
-          $compilerOutput = & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" "/DAPP_VERSION=$((Get-Content package.json -Raw | ConvertFrom-Json).version)" installer/agents.nsi 2>&1
+          $compilerOutput = & $compiler /WX "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DEXTRACT_MANIFEST=$pwd\artifacts\windows\extract.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" "/DAPP_VERSION=$((Get-Content package.json -Raw | ConvertFrom-Json).version)" installer/agents.nsi 2>&1
           $compilerExit = $LASTEXITCODE
           $compilerOutput | ForEach-Object { Write-Host $_ }
           if ($compilerExit -ne 0) {
@@ -143,6 +143,13 @@ jobs:
       - name: Verify isolated installation, recovery boundaries and data preservation
         shell: pwsh
         run: pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-windows-installer.ps1
+      - name: Upload redacted installer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AGENTS-installer-diagnostics
+          path: artifacts/installer-diagnostics/
+          if-no-files-found: ignore
       - name: Prepare versioned release manifest
         run: node scripts/release-assets.mjs prepare
       - name: Authenticate release manifest with GitHub build provenance

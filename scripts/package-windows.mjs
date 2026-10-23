@@ -1,4 +1,4 @@
-import { uninstallManifest } from "./installer-manifest.mjs";
+import { uninstallManifest, extractionManifest } from "./installer-manifest.mjs";
 import { createRequire } from "node:module";
 import {
   cp,
@@ -76,6 +76,7 @@ await cp(
   join(stage, "README.txt"),
 );
 await writeFile(join(output, "uninstall.nsh"), await uninstallManifest(stage));
+await writeFile(join(output, "extract.nsh"), await extractionManifest(stage));
 const exe = await readFile(join(stage, "AGENTS.exe"));
 if (exe.toString("ascii", 0, 2) !== "MZ")
   throw new Error("Packaged runtime is not a Windows PE executable.");

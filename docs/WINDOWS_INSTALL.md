@@ -12,6 +12,8 @@ This is a Windows x64 preview of the existing AGENTS application. The cinematic 
 
 The installer is unsigned. It does not disable Defender, SmartScreen, or organization policy. A policy requiring signed packages/scripts may still block execution; follow the organization's review/signing process. Do not change machine-wide execution policy. The fixed worker and validation PowerShell children receive `-ExecutionPolicy Bypass` for their own process only. MachinePolicy/UserPolicy can override this setting.
 
+The 0.2.1 installer candidate retains redacted installation logs under `%LOCALAPPDATA%\UltimateAgentsBoth\InstallerLogs`. A failure names the operation and, where available, the native Windows error. Keep that log; do not delete the previous installation or alter its permissions. See [staging diagnostics and verified-upgrade test boundaries](INSTALLER_STAGING.md).
+
 Application allowlists and per-action approvals remain required. Installation and running the fixture do not enable control of your normal applications. Native capture/input still fails closed without a reviewed local policy. The installer adds only application install/uninstall registry entries under HKCU; it makes no PowerShell security registry changes.
 
 Persistent data stays in Electron's user-data directory (normally `%APPDATA%\ULTIMATE AGENTS — BOTH\agents-data`). Application payloads are staged into `versions\<version>` beneath the installation root before shortcuts are switched. Previous payloads and a recovery shortcut are retained; recovery is an explicit choice, not a database rollback. The uninstaller removes known files for its own version while retaining personal runtime data and unknown files. Close AGENTS before updating or uninstalling.
@@ -44,7 +46,7 @@ npm ci
 npm run check
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File native/windows/check-build.ps1
 npm run package:windows
-& "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /WX "/DAPP_VERSION=$((Get-Content package.json -Raw | ConvertFrom-Json).version)" "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" installer/agents.nsi
+& "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /WX "/DAPP_VERSION=$((Get-Content package.json -Raw | ConvertFrom-Json).version)" "/DPACKAGE_DIR=$pwd\artifacts\windows\AGENTS" "/DUNINSTALL_MANIFEST=$pwd\artifacts\windows\uninstall.nsh" "/DEXTRACT_MANIFEST=$pwd\artifacts\windows\extract.nsh" "/DOUTPUT_FILE=$pwd\artifacts\windows\Ultimate-Agents-Both-Setup.exe" installer/agents.nsi
 Get-FileHash artifacts/windows/Ultimate-Agents-Both-Setup.exe -Algorithm SHA256
 ```
 

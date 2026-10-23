@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { windowsWorkerArguments } from "../server/computer/windows.js";
 import { browserExecutable } from "../server/browser-path.js";
-import { uninstallManifest } from "../scripts/installer-manifest.mjs";
+import {
+  uninstallManifest,
+  extractionManifest,
+} from "../scripts/installer-manifest.mjs";
 
 test("worker execution policy is process-scoped with a fixed script and no shell command", () => {
   const environmentBefore = process.env.PSExecutionPolicyPreference;
@@ -24,6 +27,40 @@ test("worker execution policy is process-scoped with a fixed script and no shell
   assert.equal(process.env.PSExecutionPolicyPreference, environmentBefore);
   args.push("untrusted mutation");
   assert.ok(!windowsWorkerArguments().includes("untrusted mutation"));
+});
+
+test("installer extraction identifies individual public files, escapes variables and refuses non-files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agents-extraction-"));
+  try {
+    await mkdir(join(root, "resources", "app"), { recursive: true });
+    await writeFile(join(root, "AGENTS.exe"), "fixture");
+    await writeFile(join(root, "resources", "app", "$literal.txt"), "fixture");
+    const manifest = await extractionManifest(root);
+    assert.ok(
+      manifest.includes('StrCpy $InstallItem "resources\\app\\$$literal.txt"'),
+    );
+    assert.ok(
+      manifest.indexOf('SetOutPath "$StageDir\\resources\\app"') <
+        manifest.indexOf('StrCpy $InstallItem "resources\\app\\$$literal.txt"'),
+    );
+    assert.equal((manifest.match(/^File /gm) || []).length, 2);
+    assert.equal((manifest.match(/^IfErrors stage_failed/gm) || []).length, 5);
+    assert.ok(
+      !manifest.includes("File /r") && !manifest.includes("File /nonfatal"),
+    );
+    if (process.platform !== "win32") {
+      await symlink(join(root, "AGENTS.exe"), join(root, "link"));
+      await assert.rejects(
+        extractionManifest(root),
+        /Only regular package files/,
+      );
+      await rm(join(root, "link"));
+      await writeFile(join(root, "bad\nname"), "fixture");
+      await assert.rejects(extractionManifest(root), /newlines/);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("packaged browser selection finds Windows Edge without claiming an absent browser exists", () => {

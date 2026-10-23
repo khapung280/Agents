@@ -258,7 +258,8 @@ Section "AGENTS" SEC_MAIN
     System::Call 'kernel32::GetFileAttributesW(w "$INSTDIR\versions") i .r0 ?e'
     Pop $Win32Error
     IntOp $1 $0 & 0x410
-    ${If} $1 != 0x10
+    ; LogicLib != compares strings; IntOp emits decimal, not a hex literal.
+    ${If} $1 != 16
       StrCpy $Win32Error "183"
       Goto stage_failed
     ${EndIf}

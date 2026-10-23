@@ -101,8 +101,9 @@ public static class AgentsInstallerLock {
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
   static extern IntPtr CreateFileW(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
-  public static IntPtr Open(string path) { return CreateFileW(path, 0, 3, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero); }
-  public static IntPtr OpenShortcut(string path) { return CreateFileW(path, 0, 1, IntPtr.Zero, 3, 0, IntPtr.Zero); }
+  // Access=0 opens only metadata and does not enforce the desired sharing lock.
+  public static IntPtr Open(string path) { return CreateFileW(path, 0x80000000, 3, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero); }
+  public static IntPtr OpenShortcut(string path) { return CreateFileW(path, 0x80000000, 1, IntPtr.Zero, 3, 0, IntPtr.Zero); }
   public static void Close(IntPtr handle) { CloseHandle(handle); }
 }
 '@
@@ -205,6 +206,10 @@ try {
 } catch {
   $safe = $_.Exception.Message.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
   Write-Output "::error title=Installer acceptance failed::$safe"
+  if ($script:lastLog) {
+    $tail = (($script:lastLog -split "`n" | Select-Object -Last 12) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+    Write-Output "::error title=Redacted installer diagnostic::$tail"
+  }
   throw
 } finally {
   New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null

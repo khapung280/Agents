@@ -155,6 +155,7 @@ Function CleanStage
     StrCpy $OwnStage "0"
     StrCpy $Operation "cleanup-owned-stage"
     StrCpy $InstallItem "-"
+    StrCpy $Win32Error "unavailable"
     StrCpy $Outcome "complete"
     IfFileExists "$StageDir" 0 +2
       StrCpy $Outcome "retained-locked-or-unknown-files"

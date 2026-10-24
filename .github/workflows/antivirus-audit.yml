@@ -54,6 +54,21 @@ jobs:
               $result.scanState = 'unavailable-defender-inactive'
               return
             }
+            # Refresh detection data only; no preference/policy/service changes.
+            $result.signatureUpdate = 'requested'
+            $update = Update-MpSignature -AsJob
+            if (!(Wait-Job -Job $update -Timeout 120)) {
+              $result.signatureUpdate = 'timeout'
+              $result.scanState = 'signature-refresh-timeout'
+              throw 'Signature refresh exceeded its two-minute observation bound.'
+            }
+            if ($update.State -ne 'Completed') { throw 'Signature refresh did not complete.' }
+            Receive-Job -Job $update -ErrorAction Stop | Out-Null
+            $status = Get-MpComputerStatus
+            $result.signatureUpdate = 'completed'
+            $result.engineVersion = $status.AMEngineVersion
+            $result.signatureVersion = $status.AntivirusSignatureVersion
+            $result.signatureAgeDays = $status.AntivirusSignatureAge
             # Read/scan only: no settings changes, exclusions, disabled remediation,
             # service toggles, installer launch or third-party sample submission.
             $before = @(Get-MpThreatDetection)

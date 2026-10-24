@@ -40,6 +40,10 @@ Var Win32Error
 Var Attempt
 Var FailureOperation
 Var FailureError
+Var PreviousState
+Var RecoveryRoot
+Var OwnRecoveryRoot
+Var OwnRecoveryVersions
 
 ; Log only fixed operation names, public package-relative names and numeric OS
 ; errors. Never dump the command line, install path, registry values or user data.
@@ -54,6 +58,7 @@ Var FailureError
 !define MUI_ABORTWARNING
 !define MUI_CUSTOMFUNCTION_ABORT CleanStage
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_PAGE_CUSTOMFUNCTION_PRE DirectoryPage
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -61,6 +66,14 @@ Var FailureError
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 !include "activation.nsh"
+!include "recovery.nsh"
+
+Function DirectoryPage
+  ; The native recovery question already names the exact fresh location.
+  ${If} $RecoveryRoot == "1"
+    Abort
+  ${EndIf}
+FunctionEnd
 
 Function .onInit
   SetShellVarContext current
@@ -82,16 +95,18 @@ Function .onInit
   System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Local\UltimateAgentsBothInstaller") p .r0 ?e'
   Pop $1
   StrCpy $MutexHandle $0
-  ${If} $1 = 183
+  ${If} $0 == 0
+  ${OrIf} $1 = 183
     StrCpy $Operation "installer-mutex"
     StrCpy $Outcome "failed"
-    StrCpy $Win32Error "183"
+    StrCpy $Win32Error $1
     Call Diagnostic
     SetErrorLevel 41
-    Abort "Another AGENTS installer is running."
+    Abort "Cannot acquire the exclusive AGENTS installer lock. No application files were changed."
   ${EndIf}
   ReadRegStr $OldVersion HKCU "Software\UltimateAgentsBoth" "Version"
   ReadRegStr $OldInstallDir HKCU "Software\UltimateAgentsBoth" "InstallDir"
+  Call InspectPreviousPayload
   ${If} $OldVersion != ""
     ${VersionCompare} "${APP_VERSION}" "$OldVersion" $0
     ${If} $0 != 1
@@ -102,6 +117,18 @@ Function .onInit
       Abort "This version is already installed or older than the registered version. No files were changed."
     ${EndIf}
   ${EndIf}
+  ; An explicit selection, never an automatic fallback around denied promotion.
+  ${GetParameters} $0
+  ClearErrors
+  ${GetOptions} $0 "/RECOVERTOUSER" $1
+  ${IfNot} ${Errors}
+    Call SelectRecoveryRoot
+  ${ElseIf} $PreviousState == "missing"
+    IfSilent init_done
+    MessageBox MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2 "The registered AGENTS executable is already missing. The installer cannot determine how it disappeared.$\r$\n$\r$\nInstall in a fresh per-user location at $LOCALAPPDATA\Programs\Ultimate Agents Both?$\r$\n$\r$\nYes leaves the old directory intact and keeps the existing personal data location. No keeps the selected install directory. No permissions or security settings will change." IDNO init_done
+    Call SelectRecoveryRoot
+  ${EndIf}
+init_done:
   Return
 log_unavailable:
   SetErrorLevel 46
@@ -168,6 +195,23 @@ Function CleanStage
       StrCpy $Outcome "retained-locked-or-unknown-files"
     Call Diagnostic
   ${EndIf}
+  ; Only directories created by this recovery attempt; nonrecursive removal
+  ; retains any unknown/locked files. Never clean the registered old root.
+  ${If} $OwnRecoveryRoot == "1"
+    SetOutPath "$TEMP"
+    ${If} $OwnRecoveryVersions == "1"
+      RMDir "$INSTDIR\versions"
+    ${EndIf}
+    RMDir "$INSTDIR"
+    StrCpy $OwnRecoveryRoot "0"
+    StrCpy $Operation "cleanup-owned-recovery-root"
+    StrCpy $InstallItem "-"
+    StrCpy $Win32Error "unavailable"
+    StrCpy $Outcome "removed-empty-root"
+    IfFileExists "$INSTDIR" 0 +2
+      StrCpy $Outcome "retained-nonempty-or-locked-root"
+    Call Diagnostic
+  ${EndIf}
 FunctionEnd
 Function .onInstFailed
   Call CleanStage
@@ -197,22 +241,29 @@ Section "AGENTS" SEC_MAIN
   ${AndIf} $Win32Error != 3
     Goto stage_failed
   ${EndIf}
-  StrCpy $OldPath ""
-  ${If} $OldInstallDir == ""
-    StrCpy $OldInstallDir "$INSTDIR"
-  ${EndIf}
-  ${If} $OldVersion != ""
-    StrCpy $OldPath "$OldInstallDir\versions\$OldVersion\AGENTS.exe"
-  ${Else}
-    IfFileExists "$OldInstallDir\AGENTS.exe" 0 +2
-      StrCpy $OldPath "$OldInstallDir\AGENTS.exe"
-  ${EndIf}
   !insertmacro BeginOperation "create-install-root"
   ${If} $LogFailed == "1"
     Goto stage_failed
   ${EndIf}
-  CreateDirectory "$INSTDIR"
-  IfErrors stage_failed
+  ${If} $RecoveryRoot == "1"
+    ; The chosen recovery root must remain fresh even if another process races
+    ; the initial check. Never merge with an existing default installation.
+    ${If} $INSTDIR != "$LOCALAPPDATA\Programs\Ultimate Agents Both"
+      StrCpy $Win32Error "87"
+      Goto stage_failed
+    ${EndIf}
+    CreateDirectory "$LOCALAPPDATA\Programs"
+    IfErrors stage_failed
+    System::Call 'kernel32::CreateDirectoryW(w "$INSTDIR", p 0) i .r0 ?e'
+    Pop $Win32Error
+    ${If} $0 == 0
+      Goto stage_failed
+    ${EndIf}
+    StrCpy $OwnRecoveryRoot "1"
+  ${Else}
+    CreateDirectory "$INSTDIR"
+    IfErrors stage_failed
+  ${EndIf}
   !insertmacro BeginOperation "create-stage"
   System::Call 'kernel32::CreateDirectoryW(w "$StageDir", p 0) i .r0 ?e'
   Pop $Win32Error
@@ -251,6 +302,10 @@ Section "AGENTS" SEC_MAIN
   !insertmacro BeginOperation "create-versions-directory"
   System::Call 'kernel32::CreateDirectoryW(w "$INSTDIR\versions", p 0) i .r0 ?e'
   Pop $Win32Error
+  ${If} $0 != 0
+  ${AndIf} $OwnRecoveryRoot == "1"
+    StrCpy $OwnRecoveryVersions "1"
+  ${EndIf}
   ${If} $0 == 0
     ${If} $Win32Error != 183
       Goto stage_failed
@@ -286,12 +341,14 @@ promote_attempt:
         Goto promote_attempt
       ${EndIf}
     ${EndIf}
+    Call PromotionDiagnostics
     Goto stage_failed
   ${EndIf}
   StrCpy $Outcome "complete"
   StrCpy $Win32Error "0"
   Call Diagnostic
   StrCpy $OwnStage "0"
+  StrCpy $OwnRecoveryRoot "0"
   ; Staging is complete before any current shortcut changes. Old versions stay.
   !insertmacro BeginOperation "snapshot-activation"
   Call BackupActivation
@@ -340,7 +397,7 @@ stage_failed:
   Call Diagnostic
   Call CleanStage
   SetErrorLevel 44
-  Abort "Staging failed at $FailureOperation (Windows error: $FailureError). Previous version, shortcuts and personal data retained. Log: $LogPath"
+  Abort "Staging failed at $FailureOperation (Windows error: $FailureError). Pre-existing files, shortcuts and personal data were not replaced. Previous payload state at startup: $PreviousState. Log: $LogPath"
 activation_failed:
   StrCpy $Outcome "failed"
   Call Diagnostic

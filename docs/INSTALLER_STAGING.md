@@ -24,6 +24,8 @@ files. A later logging failure is explicitly shown in the installer window.
 | Operation | Meaning |
 | --- | --- |
 | `check-destination` | Existing stage/version, inaccessible path or path collision |
+| `previous-payload` | Registered executable present, missing, unreadable, unusable or unregistered at startup |
+| `select-recovery-root` | Explicit fresh per-user recovery selected or refused |
 | `create-stage` | Creation of the fresh application-owned staging directory |
 | `extract-directory`, `extract-file` | Specific public package-relative extraction target |
 | `verify-layout` | Required packaged application entry is absent |
@@ -31,6 +33,8 @@ files. A later logging failure is explicitly shown in the installer window.
 | `create-versions-directory` | Immutable version parent creation/type check |
 | `release-staging-directory` | Releasing this installer's working directory |
 | `promote-stage` | Same-volume move into a previously absent version path |
+| `promotion-*-attributes` | Numeric source/parent/target attributes or native lookup error after failure |
+| `promotion-source-delete-access`, `promotion-parent-add-directory-access` | Nonmutating access probes; results do not identify the responsible policy/process |
 | `snapshot-activation` | Exact shortcut/registration snapshot before changes |
 | `activate-shortcuts`, `register-version` | Activation after staging is complete |
 | `restore-activation` | Exact previous activation snapshot restoration |
@@ -45,7 +49,9 @@ shortcuts and user data. Cleanup uses an exact build-owned file list and retains
 unknown or locked files. Never delete a retained stage manually without review.
 
 Installer return codes: 41 concurrent installer, 42 collision, 43 version floor,
-44 staging failure, 45 activation/snapshot failure, 46 initial log unavailable.
+44 staging failure, 45 activation/snapshot failure, 46 initial log unavailable,
+47 fresh-location recovery refused. Code 41 also covers failure to acquire the
+exclusive installer mutex.
 CRC and updater provenance checks remain enabled. No security settings, ACLs,
 SmartScreen exemptions or permissions are changed by the production installer.
 
@@ -66,7 +72,8 @@ The tests do not send mouse/keyboard input, start paid models, change real user
 data or establish SmartScreen acceptance. The old flat 0.1.0 application and the
 user's actual D: drive still require device-specific acceptance.
 
-Candidate version 0.2.1 must be approved for publication after Windows verification.
-The existing v0.2.0 release/tag/assets must not be overwritten. On a laptop failure,
+Candidate version 0.2.2 must be approved for publication after Windows verification.
+See [missing-executable forensic findings and explicit recovery](INSTALLER_RECOVERY.md).
+Existing release tags/assets must not be overwritten. On a laptop failure,
 retain the new log and the installer window's operation/code; do not change
 machine-wide security policies or remove the previous application.

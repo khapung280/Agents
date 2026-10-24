@@ -5,6 +5,9 @@ $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
 $installer = (Resolve-Path 'artifacts/windows/Ultimate-Agents-Both-Setup.exe').Path
 $testRoot = Join-Path $env:RUNNER_TEMP ('agents-upgrade-' + [guid]::NewGuid())
 $root = Join-Path $testRoot 'Upgrade With Spaces\Ultimate Agents Both'
+$brokenRoot = Join-Path $testRoot 'Broken Installation With Spaces\Ultimate Agents Both'
+$defaultRoot = Join-Path $env:LOCALAPPDATA 'Programs\Ultimate Agents Both'
+$recoveryAttempted = $false
 $data = Join-Path $env:APPDATA 'ULTIMATE AGENTS — BOTH\agents-data'
 $logDir = Join-Path $env:LOCALAPPDATA 'UltimateAgentsBoth\InstallerLogs'
 $diagnostics = Join-Path $pwd 'artifacts/installer-diagnostics'
@@ -12,7 +15,7 @@ $reg = 'HKCU:\Software\UltimateAgentsBoth'
 $uninstall = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UltimateAgentsBoth'
 $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'AGENTS.lnk'
 $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Ultimate Agents Both'
-foreach ($path in @($testRoot,$data,$logDir,$reg,$uninstall,$desktop,$menu)) {
+foreach ($path in @($testRoot,$defaultRoot,$data,$logDir,$reg,$uninstall,$desktop,$menu)) {
   if (Test-Path -LiteralPath $path) { throw 'Runner has existing AGENTS state; refusing to modify it.' }
 }
 $results = [Collections.Generic.List[string]]::new()
@@ -42,12 +45,12 @@ function Read-NewLog([string[]]$Before) {
   if ($text -notmatch '^version=[^\r\n]+ operation=initialize ' -or [regex]::Matches($text,'(?m)^version=').Count -lt 2) {
     throw 'Persistent installer log lost earlier operations instead of appending.'
   }
-  foreach ($private in @($root,$data,$env:USERPROFILE,'private-memory-fixture','sample-sensitive-value')) {
+  foreach ($private in @($root,$brokenRoot,$defaultRoot,$data,$env:USERPROFILE,'private-memory-fixture','sample-sensitive-value')) {
     if ($private -and $text.Contains($private)) { throw 'Installer log exposed private fixture data or an absolute path.' }
   }
   return $text
 }
-function Install-Checked([string]$Exe,[int]$Expected,[string]$Fault = '') {
+function Install-Checked([string]$Exe,[int]$Expected,[string]$Fault = '',[string]$TargetRoot = $root,[switch]$RecoverToUser) {
   $beforeLogs = @(Get-ChildItem $logDir -File -ErrorAction SilentlyContinue | ForEach-Object FullName)
   $handle = [IntPtr]::Zero
   if ($Fault -eq 'activation-lock') {
@@ -55,12 +58,15 @@ function Install-Checked([string]$Exe,[int]$Expected,[string]$Fault = '') {
     if ($handle -eq [IntPtr]::new(-1)) { throw 'Could not acquire isolated shortcut lock.' }
   }
   # NSIS /D must be last, with no extra quoting around the directory value.
-  $process = Start-Process -FilePath $Exe -ArgumentList @('/S', "/D=$root") -PassThru
+  $arguments = @('/S')
+  if ($RecoverToUser) { $arguments += '/RECOVERTOUSER' }
+  $arguments += "/D=$TargetRoot"
+  $process = Start-Process -FilePath $Exe -ArgumentList $arguments -PassThru
   $clock = [Diagnostics.Stopwatch]::StartNew()
   try {
     if ($Fault -in @('persistent-lock','transient-lock','original-lock')) {
       $stageVersion = if ($Fault -eq 'original-lock') { '0.2.0' } else { $version }
-      $stage = Join-Path $root ".stage-$stageVersion"
+      $stage = Join-Path $TargetRoot ".stage-$stageVersion"
       while (!$process.HasExited -and $clock.Elapsed.TotalSeconds -lt 45) {
         if (Test-Path -LiteralPath $stage -PathType Container) {
           $handle = [AgentsInstallerLock]::Open($stage)
@@ -201,6 +207,130 @@ try {
   Install-Checked $installer 43
   Install-Checked $oldInstaller 43
   Pass 'Same-version reinstall and downgrade rejected'
+
+  # Recovery is an explicit new-location operation, not a way to bypass the
+  # version floor or move an intact installation. Register the genuine retained
+  # older payload so this refusal is tested independently of the version floor.
+  Set-ItemProperty $reg Version '0.2.0'
+  $validRecoveryBefore = Snapshot @($root,$data,$desktop,$menu)
+  $validRecoveryRegistry = RegistrySnapshot
+  Install-Checked $installer 47 -RecoverToUser
+  if ((Snapshot @($root,$data,$desktop,$menu)) -ne $validRecoveryBefore -or (RegistrySnapshot) -ne $validRecoveryRegistry -or (Test-Path -LiteralPath $defaultRoot)) {
+    throw 'Recovery request changed an intact registered installation.'
+  }
+  Pass 'Explicit recovery refuses an existing previous executable without changing files or registration'
+
+  # Reproduce the observed broken state, not an unproven history of how it arose:
+  # an existing root with spaces, empty versions, no old executable and a stale
+  # shortcut. These are disposable layout/data fixtures, not a working old app.
+  $brokenVersions = Join-Path $brokenRoot 'versions'
+  New-Item -ItemType Directory -Path $brokenVersions,(Join-Path $brokenRoot 'unknown-owner-directory') -Force | Out-Null
+  Set-Content (Join-Path $brokenRoot 'personal-settings.json') '{"preserve":"sample-sensitive-value"}' -Encoding utf8
+  Set-Content (Join-Path $brokenRoot 'unknown-owner-directory\keep.txt') 'retain this owner file' -Encoding ascii
+  Set-Content (Join-Path $data 'approvals-fixture.json') '{"approvedActions":[],"screenCapture":false}' -Encoding utf8
+  Set-ItemProperty $reg InstallDir $brokenRoot
+  Set-ItemProperty $reg Version '0.2.1'
+  Set-ItemProperty $reg UnknownOwnerValue 'retain this registration value'
+  Set-ItemProperty $uninstall DisplayVersion '0.2.1'
+  Set-ItemProperty $uninstall DisplayIcon (Join-Path $brokenRoot 'AGENTS.exe')
+  Set-ItemProperty $uninstall UninstallString ('"' + (Join-Path $brokenRoot 'Uninstall AGENTS.exe') + '"')
+  foreach ($shortcutPath in @($desktop,(Join-Path $menu 'AGENTS.lnk'))) {
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = Join-Path $brokenRoot 'AGENTS.exe'
+    $shortcut.Save()
+  }
+  $staleTest = $shell.CreateShortcut((Join-Path $menu 'Test Windows Control.lnk'))
+  $staleTest.TargetPath = Join-Path $brokenRoot 'Test Windows Control.cmd'
+  $staleTest.Save()
+  $staleUninstall = $shell.CreateShortcut((Join-Path $menu 'Uninstall.lnk'))
+  $staleUninstall.TargetPath = Join-Path $brokenRoot 'Uninstall AGENTS.exe'
+  $staleUninstall.Save()
+  $previousShortcut = Join-Path $menu 'Previous AGENTS (recovery).lnk'
+  Remove-Item -LiteralPath $previousShortcut
+  if ((Test-Path (Join-Path $brokenRoot 'AGENTS.exe')) -or @(Get-ChildItem -LiteralPath $brokenVersions -Force).Count -ne 0) {
+    throw 'Broken-install fixture does not match the missing-executable and empty-versions observations.'
+  }
+  $brokenBefore = Snapshot @($brokenRoot,$data,$desktop,$menu)
+  $brokenRegistryBefore = RegistrySnapshot
+  $brokenDataBefore = Snapshot @($brokenRoot,$data)
+  $versionsAcl = Get-Acl -LiteralPath $brokenVersions
+  $deniedVersionsAcl = Get-Acl -LiteralPath $brokenVersions
+  $denyDestinationCreate = [Security.AccessControl.FileSystemAccessRule]::new($identity,[Security.AccessControl.FileSystemRights]::CreateDirectories,[Security.AccessControl.AccessControlType]::Deny)
+  $deniedVersionsAcl.AddAccessRule($denyDestinationCreate)
+  try {
+    # This ACL exists only in the disposable CI fixture. It shows that creating
+    # a root child can succeed while moving a directory into versions fails.
+    # The production installer neither writes ACLs nor treats this as proof of
+    # the laptop's underlying access-denied cause.
+    Set-Acl -LiteralPath $brokenVersions -AclObject $deniedVersionsAcl
+    $mkdirProof = Join-Path $brokenRoot 'root-mkdir-proof'
+    New-Item -ItemType Directory -Path $mkdirProof | Out-Null
+    Remove-Item -LiteralPath $mkdirProof
+    $deniedSddl = (Get-Acl -LiteralPath $brokenVersions).Sddl
+    Install-Checked $installer 44 -TargetRoot $brokenRoot
+    if ($script:lastLog -notmatch 'operation=previous-payload .*outcome=missing' -or $script:lastLog -notmatch 'operation=promote-stage .*outcome=failed win32=5') {
+      throw 'Broken-install promotion denial lacks the missing-payload and exact access-denied diagnostics.'
+    }
+    if ([regex]::Matches($script:lastLog,'operation=promote-stage .*outcome=retry').Count -ne 7) {
+      throw 'Broken-install promotion denial did not stop after seven retries.'
+    }
+    if ($script:lastLog -notmatch 'operation=promotion-parent-add-directory-access .*outcome=denied-or-unavailable win32=5' -or $script:lastLog -notmatch 'operation=promotion-source-attributes .*outcome=attributes-[0-9]+ win32=0') {
+      throw 'Promotion diagnostics did not observe denied destination access and the existing source directory.'
+    }
+    if ((Get-Acl -LiteralPath $brokenVersions).Sddl -ne $deniedSddl) { throw 'Installer changed fixture access controls.' }
+  } finally { Set-Acl -LiteralPath $brokenVersions -AclObject $versionsAcl }
+  if ((Snapshot @($brokenRoot,$data,$desktop,$menu)) -ne $brokenBefore -or (RegistrySnapshot) -ne $brokenRegistryBefore -or (Get-Acl -LiteralPath $brokenVersions).Sddl -ne $versionsAcl.Sddl) {
+    throw 'Failed broken-install repair changed existing files, data, shortcuts, registration or access controls.'
+  }
+  if (@(Get-ChildItem -LiteralPath $brokenVersions -Force).Count -ne 0 -or (Test-Path (Join-Path $brokenRoot ".stage-$version")) -or (Test-Path (Join-Path $brokenRoot 'AGENTS.exe'))) {
+    throw 'Failed broken-install repair changed the original empty-versions state or left an owned stage.'
+  }
+  Pass 'Missing-executable fixture permits root mkdir but denies promotion with Windows error 5; bounded failure preserves data, ACLs and stale shortcuts'
+
+  $recoveryAttempted = $true
+  try {
+    Set-Acl -LiteralPath $brokenVersions -AclObject $deniedVersionsAcl
+    $deniedSddl = (Get-Acl -LiteralPath $brokenVersions).Sddl
+    Install-Checked $installer 0 -TargetRoot $brokenRoot -RecoverToUser
+    if ((Get-Acl -LiteralPath $brokenVersions).Sddl -ne $deniedSddl) { throw 'Fresh-location recovery changed original access controls.' }
+  } finally { Set-Acl -LiteralPath $brokenVersions -AclObject $versionsAcl }
+  $recoveredVersion = Join-Path $defaultRoot "versions\$version"
+  if ($script:lastLog -notmatch 'operation=previous-payload .*outcome=missing' -or $script:lastLog -notmatch 'operation=installation .*outcome=success') {
+    throw 'Explicit recovery lacks missing-payload and successful-installation receipts.'
+  }
+  foreach ($file in Get-ChildItem -LiteralPath $payload -Recurse -File -Force) {
+    $relative = [IO.Path]::GetRelativePath($payload,$file.FullName)
+    if ((Get-FileHash -LiteralPath (Join-Path $recoveredVersion $relative) -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash) {
+      throw 'Recovered application differs from the verified package.'
+    }
+  }
+  foreach ($shortcutPath in @($desktop,(Join-Path $menu 'AGENTS.lnk'))) {
+    if ($shell.CreateShortcut($shortcutPath).TargetPath -ne (Join-Path $recoveredVersion 'AGENTS.exe')) { throw 'Recovery did not activate the real new executable.' }
+  }
+  if ($shell.CreateShortcut((Join-Path $menu 'Test Windows Control.lnk')).TargetPath -ne (Join-Path $recoveredVersion 'Test Windows Control.cmd')) {
+    throw 'Recovery did not activate the packaged validation command.'
+  }
+  if ((Get-ItemProperty $reg).InstallDir -ne $defaultRoot -or (Get-ItemProperty $reg).Version -ne $version -or (Get-ItemProperty $reg).UnknownOwnerValue -ne 'retain this registration value') {
+    throw 'Recovery registration is incorrect or lost an unknown owner value.'
+  }
+  if ((Snapshot @($brokenRoot,$data)) -ne $brokenDataBefore -or (Test-Path -LiteralPath $previousShortcut) -or @(Get-ChildItem -LiteralPath $brokenVersions -Force).Count -ne 0) {
+    throw 'Recovery changed original files/data or advertised a nonexistent previous executable.'
+  }
+  Pass 'Explicit recovery installs verified package bytes at a fresh per-user root, repairs shortcuts and preserves original files, memories, approvals and policy'
+
+  # A repeat explicit request against the broken registration must not merge
+  # into the now-existing recovery root. Use the stale older registration so
+  # this exercises destination refusal rather than the separate version floor.
+  Set-ItemProperty $reg InstallDir $brokenRoot
+  Set-ItemProperty $reg Version '0.2.1'
+  $occupiedRecoveryBefore = Snapshot @($defaultRoot,$brokenRoot,$data,$desktop,$menu)
+  $occupiedRecoveryRegistry = RegistrySnapshot
+  Install-Checked $installer 47 -TargetRoot $brokenRoot -RecoverToUser
+  if ((Snapshot @($defaultRoot,$brokenRoot,$data,$desktop,$menu)) -ne $occupiedRecoveryBefore -or (RegistrySnapshot) -ne $occupiedRecoveryRegistry) {
+    throw 'Explicit recovery overwrote an existing recovery destination or changed protected state.'
+  }
+  Pass 'Explicit recovery refuses an occupied default destination without changing either installation'
+
   $env:AGENTS_MOTW_TEST_PATH = Join-Path $testRoot 'internet-zone-test.exe'
   Copy-Item $installer $env:AGENTS_MOTW_TEST_PATH
   node -e 'require("./desktop/updater.cjs").markInternetDownload(process.env.AGENTS_MOTW_TEST_PATH,require("./package.json").version).then(()=>console.log("PASS: Windows Internet-zone metadata retained"))'
@@ -222,4 +352,5 @@ try {
   foreach ($path in @($testRoot,$data,$logDir,$reg,$uninstall,$desktop,$menu)) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
   }
+  if ($recoveryAttempted -and (Test-Path -LiteralPath $defaultRoot)) { Remove-Item -LiteralPath $defaultRoot -Recurse -Force }
 }

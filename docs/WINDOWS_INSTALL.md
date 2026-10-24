@@ -12,7 +12,7 @@ This is a Windows x64 preview of the existing AGENTS application. The cinematic 
 
 The installer is unsigned. It does not disable Defender, SmartScreen, or organization policy. A policy requiring signed packages/scripts may still block execution; follow the organization's review/signing process. Do not change machine-wide execution policy. The fixed worker and validation PowerShell children receive `-ExecutionPolicy Bypass` for their own process only. MachinePolicy/UserPolicy can override this setting.
 
-The 0.2.1 installer candidate retains redacted installation logs under `%LOCALAPPDATA%\UltimateAgentsBoth\InstallerLogs`. A failure names the operation and, where available, the native Windows error. Keep that log; do not delete the previous installation or alter its permissions. See [staging diagnostics and verified-upgrade test boundaries](INSTALLER_STAGING.md).
+The installer retains redacted installation logs under `%LOCALAPPDATA%\UltimateAgentsBoth\InstallerLogs`. A failure names the operation and, where available, the native Windows error. Keep that log; do not delete the previous installation or alter its permissions. See [staging diagnostics](INSTALLER_STAGING.md) and [0.2.2 missing-executable recovery and verification boundaries](INSTALLER_RECOVERY.md).
 
 Application allowlists and per-action approvals remain required. Installation and running the fixture do not enable control of your normal applications. Native capture/input still fails closed without a reviewed local policy. The installer adds only application install/uninstall registry entries under HKCU; it makes no PowerShell security registry changes.
 

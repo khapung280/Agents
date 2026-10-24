@@ -1,8 +1,8 @@
 # Real installers, isolated Windows runner, no desktop input. /S is CI-only.
+param([switch]$FixtureSelfTest)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'Restricted to disposable GitHub Actions runners.' }
 $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-$installer = (Resolve-Path 'artifacts/windows/Ultimate-Agents-Both-Setup.exe').Path
 $testRoot = Join-Path $env:RUNNER_TEMP ('agents-upgrade-' + [guid]::NewGuid())
 $root = Join-Path $testRoot 'Upgrade With Spaces\Ultimate Agents Both'
 $brokenRoot = Join-Path $testRoot 'Broken Installation With Spaces\Ultimate Agents Both'
@@ -18,6 +18,42 @@ $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Ultimate Agents Bo
 foreach ($path in @($testRoot,$defaultRoot,$data,$logDir,$reg,$uninstall,$desktop,$menu)) {
   if (Test-Path -LiteralPath $path) { throw 'Runner has existing AGENTS state; refusing to modify it.' }
 }
+if ($FixtureSelfTest) {
+  # Exercise the test harness's ACL round-trip before packaging an installer.
+  # This isolated probe changes only a newly owned temporary fixture directory.
+  $fixtureOwned = $false
+  try {
+    New-Item -ItemType Directory -Path $testRoot | Out-Null
+    $fixtureOwned = $true
+    $fixtureVersions = Join-Path $testRoot 'ACL Fixture With Spaces\versions'
+    New-Item -ItemType Directory -Path $fixtureVersions -Force | Out-Null
+    $fixtureOriginalAcl = Get-Acl -LiteralPath $fixtureVersions
+    $fixtureOriginalSddl = $fixtureOriginalAcl.Sddl
+    $fixtureDeniedAcl = Get-Acl -LiteralPath $fixtureVersions
+    $fixtureIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $fixtureDenyRule = [Security.AccessControl.FileSystemAccessRule]::new($fixtureIdentity,[Security.AccessControl.FileSystemRights]::CreateDirectories,[Security.AccessControl.AccessControlType]::Deny)
+    $fixtureDeniedAcl.AddAccessRule($fixtureDenyRule)
+    try {
+      Set-Acl -LiteralPath $fixtureVersions -AclObject $fixtureDeniedAcl
+      $fixtureDeniedSddl = (Get-Acl -LiteralPath $fixtureVersions).Sddl
+      $fixtureMkdir = Join-Path (Split-Path $fixtureVersions) 'root-mkdir-proof'
+      New-Item -ItemType Directory -Path $fixtureMkdir | Out-Null
+      Remove-Item -LiteralPath $fixtureMkdir
+      if ((Get-Acl -LiteralPath $fixtureVersions).Sddl -ne $fixtureDeniedSddl) { throw 'Fixture-only root mkdir changed the injected ACL.' }
+    } finally { Set-Acl -LiteralPath $fixtureVersions -AclObject $fixtureOriginalAcl }
+    $fixtureRestoredSddl = (Get-Acl -LiteralPath $fixtureVersions).Sddl
+    $fixtureOriginalDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($fixtureOriginalSddl)
+    $fixtureRestoredDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($fixtureRestoredSddl)
+    $fixtureEqual = $fixtureRestoredSddl -eq $fixtureOriginalSddl
+    Write-Output "::notice title=Installer fixture ACL roundtrip::restoredSddlEqual=$fixtureEqual originalAceCount=$($fixtureOriginalDescriptor.DiscretionaryAcl.Count) restoredAceCount=$($fixtureRestoredDescriptor.DiscretionaryAcl.Count) originalControlFlags=$($fixtureOriginalDescriptor.ControlFlags) restoredControlFlags=$($fixtureRestoredDescriptor.ControlFlags)"
+    if (!$fixtureEqual) { throw 'Fixture-only ACL round-trip changed the original descriptor without executing an installer.' }
+    Write-Host 'PASS: isolated installer fixture ACL round-trip; no installer executed'
+  } finally {
+    if ($fixtureOwned) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
+  }
+  return
+}
+$installer = (Resolve-Path 'artifacts/windows/Ultimate-Agents-Both-Setup.exe').Path
 $results = [Collections.Generic.List[string]]::new()
 function Pass([string]$name) { $results.Add($name); Write-Host "PASS: $name" }
 function Snapshot([string[]]$Paths) {
@@ -252,8 +288,16 @@ try {
   }
   $brokenBefore = Snapshot @($brokenRoot,$data,$desktop,$menu)
   $brokenRegistryBefore = RegistrySnapshot
+  $brokenComponentsBefore = @{
+    root = Snapshot @($brokenRoot)
+    data = Snapshot @($data)
+    desktop = Snapshot @($desktop)
+    menu = Snapshot @($menu)
+    registry = $brokenRegistryBefore
+  }
   $brokenDataBefore = Snapshot @($brokenRoot,$data)
   $versionsAcl = Get-Acl -LiteralPath $brokenVersions
+  $versionsSddlBefore = $versionsAcl.Sddl
   $deniedVersionsAcl = Get-Acl -LiteralPath $brokenVersions
   $denyDestinationCreate = [Security.AccessControl.FileSystemAccessRule]::new($identity,[Security.AccessControl.FileSystemRights]::CreateDirectories,[Security.AccessControl.AccessControlType]::Deny)
   $deniedVersionsAcl.AddAccessRule($denyDestinationCreate)
@@ -280,6 +324,22 @@ try {
     if ((Get-Acl -LiteralPath $brokenVersions).Sddl -ne $deniedSddl) { throw 'Installer changed fixture access controls.' }
   } finally { Set-Acl -LiteralPath $brokenVersions -AclObject $versionsAcl }
   if ((Snapshot @($brokenRoot,$data,$desktop,$menu)) -ne $brokenBefore -or (RegistrySnapshot) -ne $brokenRegistryBefore -or (Get-Acl -LiteralPath $brokenVersions).Sddl -ne $versionsAcl.Sddl) {
+    $brokenComponentsAfter = @{
+      root = Snapshot @($brokenRoot)
+      data = Snapshot @($data)
+      desktop = Snapshot @($desktop)
+      menu = Snapshot @($menu)
+      registry = RegistrySnapshot
+    }
+    $componentDiagnostics = foreach ($category in @('root','data','desktop','menu','registry')) {
+      $mismatchCount = @(Compare-Object -ReferenceObject @($brokenComponentsBefore[$category] -split "`n") -DifferenceObject @($brokenComponentsAfter[$category] -split "`n")).Count
+      "$category=$($mismatchCount -eq 0) mismatchCount=$mismatchCount"
+    }
+    $restoredSddl = (Get-Acl -LiteralPath $brokenVersions).Sddl
+    $originalDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($versionsSddlBefore)
+    $restoredDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($restoredSddl)
+    $componentDiagnostics += "restoredAcl=$($restoredSddl -eq $versionsSddlBefore) originalAceCount=$($originalDescriptor.DiscretionaryAcl.Count) restoredAceCount=$($restoredDescriptor.DiscretionaryAcl.Count) originalControlFlags=$($originalDescriptor.ControlFlags) restoredControlFlags=$($restoredDescriptor.ControlFlags)"
+    Write-Output "::error title=Broken-install preservation diagnostics::$($componentDiagnostics -join '; ')"
     throw 'Failed broken-install repair changed existing files, data, shortcuts, registration or access controls.'
   }
   if (@(Get-ChildItem -LiteralPath $brokenVersions -Force).Count -ne 0 -or (Test-Path (Join-Path $brokenRoot ".stage-$version")) -or (Test-Path (Join-Path $brokenRoot 'AGENTS.exe'))) {

@@ -77,3 +77,11 @@ The injected restriction demonstrates one possible mechanism, not the laptop's
 root cause. CI does not click the native recovery question, inspect the laptop,
 test SmartScreen acceptance, or exercise real mouse/keyboard control. Those remain
 device-specific verification. No paid API or API credentials are used.
+
+The first repair CI run stopped on the new preservation assertion. A separate
+fixture-only Windows run (40057238179) reproduced a descriptor mismatch without
+executing an installer: `Set-Acl` adds `DiscretionaryAclAutoInherited`. The harness
+now establishes that metadata before taking its baseline, allowing no change to
+ACL bytes, owner/group or other control bits. Exact descriptor comparisons remain
+in force during installer execution and after the fixture restores its ACL. This
+fixture normalization never runs in the production installer or on a laptop.

@@ -18,6 +18,36 @@ $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Ultimate Agents Bo
 foreach ($path in @($testRoot,$defaultRoot,$data,$logDir,$reg,$uninstall,$desktop,$menu)) {
   if (Test-Path -LiteralPath $path) { throw 'Runner has existing AGENTS state; refusing to modify it.' }
 }
+function Fixture-AclBytes([Security.AccessControl.GenericAcl]$Acl) {
+  if ($null -eq $Acl) { return 'absent' }
+  $bytes = [byte[]]::new($Acl.BinaryLength)
+  $Acl.GetBinaryForm($bytes,0)
+  return [Convert]::ToBase64String($bytes)
+}
+function Initialize-OwnedFixtureAcl([string]$Path) {
+  if (!$Path.StartsWith($testRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or @(Get-ChildItem -LiteralPath $Path -Force).Count -ne 0) {
+    throw 'ACL fixture initialization requires an empty directory within the owned temporary root.'
+  }
+  # Windows preflight 40057238179 confirmed that a test-only Set-Acl round-trip
+  # adds DiscretionaryAclAutoInherited even without an installer. Establish that
+  # metadata before the immutable baseline; this does not explain laptop denial.
+  # Every ACL byte, owner/group, and other control bit must remain unchanged.
+  $originalAcl = Get-Acl -LiteralPath $Path
+  $originalDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($originalAcl.GetSecurityDescriptorBinaryForm(),0)
+  Set-Acl -LiteralPath $Path -AclObject $originalAcl
+  $normalizedAcl = Get-Acl -LiteralPath $Path
+  $normalizedDescriptor = [Security.AccessControl.RawSecurityDescriptor]::new($normalizedAcl.GetSecurityDescriptorBinaryForm(),0)
+  $controlMask = -bnot [int][Security.AccessControl.ControlFlags]::DiscretionaryAclAutoInherited
+  if ((Fixture-AclBytes $originalDescriptor.DiscretionaryAcl) -cne (Fixture-AclBytes $normalizedDescriptor.DiscretionaryAcl) -or
+      (Fixture-AclBytes $originalDescriptor.SystemAcl) -cne (Fixture-AclBytes $normalizedDescriptor.SystemAcl) -or
+      [string]$originalDescriptor.Owner -ne [string]$normalizedDescriptor.Owner -or
+      [string]$originalDescriptor.Group -ne [string]$normalizedDescriptor.Group -or
+      ([int]$originalDescriptor.ControlFlags -band $controlMask) -ne ([int]$normalizedDescriptor.ControlFlags -band $controlMask) -or
+      $originalDescriptor.ResourceManagerControl -ne $normalizedDescriptor.ResourceManagerControl) {
+    throw 'Fixture ACL initialization changed more than the observed auto-inheritance metadata flag.'
+  }
+  return $normalizedAcl
+}
 if ($FixtureSelfTest) {
   # Exercise the test harness's ACL round-trip before packaging an installer.
   # This isolated probe changes only a newly owned temporary fixture directory.
@@ -27,7 +57,7 @@ if ($FixtureSelfTest) {
     $fixtureOwned = $true
     $fixtureVersions = Join-Path $testRoot 'ACL Fixture With Spaces\versions'
     New-Item -ItemType Directory -Path $fixtureVersions -Force | Out-Null
-    $fixtureOriginalAcl = Get-Acl -LiteralPath $fixtureVersions
+    $fixtureOriginalAcl = Initialize-OwnedFixtureAcl $fixtureVersions
     $fixtureOriginalSddl = $fixtureOriginalAcl.Sddl
     $fixtureDeniedAcl = Get-Acl -LiteralPath $fixtureVersions
     $fixtureIdentity = [Security.Principal.WindowsIdentity]::GetCurrent().User
@@ -286,6 +316,8 @@ try {
   if ((Test-Path (Join-Path $brokenRoot 'AGENTS.exe')) -or @(Get-ChildItem -LiteralPath $brokenVersions -Force).Count -ne 0) {
     throw 'Broken-install fixture does not match the missing-executable and empty-versions observations.'
   }
+  $versionsAcl = Initialize-OwnedFixtureAcl $brokenVersions
+  $versionsSddlBefore = $versionsAcl.Sddl
   $brokenBefore = Snapshot @($brokenRoot,$data,$desktop,$menu)
   $brokenRegistryBefore = RegistrySnapshot
   $brokenComponentsBefore = @{
@@ -296,8 +328,6 @@ try {
     registry = $brokenRegistryBefore
   }
   $brokenDataBefore = Snapshot @($brokenRoot,$data)
-  $versionsAcl = Get-Acl -LiteralPath $brokenVersions
-  $versionsSddlBefore = $versionsAcl.Sddl
   $deniedVersionsAcl = Get-Acl -LiteralPath $brokenVersions
   $denyDestinationCreate = [Security.AccessControl.FileSystemAccessRule]::new($identity,[Security.AccessControl.FileSystemRights]::CreateDirectories,[Security.AccessControl.AccessControlType]::Deny)
   $deniedVersionsAcl.AddAccessRule($denyDestinationCreate)

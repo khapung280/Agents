@@ -1,0 +1,103 @@
+name: Scan existing v0.2.2 release without execution
+on:
+  push:
+    branches: [audit/avast-v022]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - name: Verify existing release and inspect Defender availability
+        shell: pwsh
+        timeout-minutes: 8
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ('agents-av-audit-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $root | Out-Null
+          $file = Join-Path $root 'Ultimate-Agents-Both-Setup.exe'
+          $report = Join-Path $env:GITHUB_WORKSPACE 'antivirus-audit.json'
+          $result = [ordered]@{
+            sampleVersion = '0.2.2'
+            sampleSourceCommit = 'b5c74cc14a097e7fcbd6927c327cd123a2767216'
+            expectedSha256 = '5a1e5c35d3fab96c58f98927d1537675338ebc6d516786a842b39f6d991cac9a'
+            installerExecuted = $false
+            installerBuilt = $false
+            securitySettingsChanged = $false
+            scanCompleted = $false
+            scanState = 'not-started'
+            avastVerdict = 'not-tested'
+          }
+          try {
+            Invoke-WebRequest 'https://github.com/khapung280/Agents/releases/download/v0.2.2/Ultimate-Agents-Both-Setup.exe' -OutFile $file -TimeoutSec 120
+            $result.actualSha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($result.actualSha256 -ne $result.expectedSha256) { throw 'Public release checksum mismatch. No scan permitted.' }
+            $result.bytes = (Get-Item -LiteralPath $file).Length
+            $result.authenticodeStatus = [string](Get-AuthenticodeSignature -LiteralPath $file).Status
+            if (!(Get-Command Get-MpComputerStatus -ErrorAction SilentlyContinue)) {
+              $result.scanState = 'unavailable-no-defender-cmdlet'
+              return
+            }
+            try { $status = Get-MpComputerStatus } catch {
+              $result.scanState = 'unavailable-defender-status'
+              $result.statusErrorType = $_.Exception.GetType().Name
+              return
+            }
+            $result.amServiceEnabled = $status.AMServiceEnabled
+            $result.antivirusEnabled = $status.AntivirusEnabled
+            $result.realTimeProtectionEnabled = $status.RealTimeProtectionEnabled
+            $result.engineVersion = $status.AMEngineVersion
+            $result.signatureVersion = $status.AntivirusSignatureVersion
+            $result.signatureAgeDays = $status.AntivirusSignatureAge
+            if (!$status.AMServiceEnabled -or !$status.AntivirusEnabled) {
+              $result.scanState = 'unavailable-defender-inactive'
+              return
+            }
+            # Read/scan only: no settings changes, exclusions, disabled remediation,
+            # service toggles, installer launch or third-party sample submission.
+            $before = @(Get-MpThreatDetection)
+            $job = Start-MpScan -ScanType CustomScan -ScanPath $file -AsJob
+            if (!(Wait-Job -Job $job -Timeout 300)) {
+              $result.scanState = 'timeout'
+              throw 'Defender scan exceeded its five-minute observation bound; no clean result claimed.'
+            }
+            if ($job.State -ne 'Completed') { throw 'Defender scan job did not complete successfully.' }
+            Receive-Job -Job $job -ErrorAction Stop | Out-Null
+            $after = @(Get-MpThreatDetection)
+            $relevant = @($after | Where-Object {
+              @($_.Resources | Where-Object { $_ -like '*Ultimate-Agents-Both-Setup.exe*' }).Count -gt 0 -or
+              $_.DetectionID -notin @($before | ForEach-Object DetectionID)
+            })
+            $result.scanCompleted = $true
+            $result.detectedEvents = $relevant.Count
+            $result.threatIds = @($relevant | ForEach-Object ThreatID | Sort-Object -Unique)
+            $result.sampleRetained = Test-Path -LiteralPath $file
+            if ($result.sampleRetained) {
+              $result.retainedSha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+            if ($relevant.Count -gt 0) {
+              $result.scanState = 'detection-reported'
+            } elseif (!$result.sampleRetained -or $result.retainedSha256 -ne $result.expectedSha256) {
+              $result.scanState = 'sample-removed-or-changed'
+            } else {
+              $result.scanState = 'no-defender-detection-reported'
+            }
+          } catch {
+            $result.errorType = $_.Exception.GetType().Name
+            if ($result.scanState -eq 'not-started') { $result.scanState = 'error' }
+            throw
+          } finally {
+            $json = $result | ConvertTo-Json -Depth 6
+            $json | Set-Content -LiteralPath $report -Encoding utf8
+            $safe = $json.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::notice title=Existing release antivirus evidence::$safe"
+            @('## Existing release scan evidence', '```json', $json, '```', 'This is not an Avast verdict or proof of absence of malware. No installer was built or executed; security settings were not changed.') -join "`n" | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+      - name: Retain scan evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: AGENTS-v022-antivirus-audit
+          path: antivirus-audit.json
+          if-no-files-found: error
